@@ -139,12 +139,18 @@ gitlog_commits <- gitlog_commits_dates %>%
     committer_suffix=suffix_extract(committer_host)$suffix,
     committer_is_edu=str_detect(committer_suffix, "edu")|str_detect(committer_suffix, "ac."),
     author_hosted_email=author_domain %in% email_providers,
-    committer_hosted_email=committer_domain %in% email_providers,
+    committer_hosted_email=committer_domain != "github" & committer_domain %in% email_providers,
     author_is_google = author_domain %in% googler_domains,
+    committer_is_google = committer_domain %in% googler_domains | committer_domain == "github",
     author_domain_type = 
            ifelse(author_is_google, "Google",
                   ifelse(author_hosted_email, "Personal",
                          ifelse(author_is_edu, "Edu", "Other"))
+                  ),
+    committer_domain_type =  
+           ifelse(committer_is_google, "Google",
+                  ifelse(committer_hosted_email, "Personal",
+                         ifelse(committer_is_edu, "Edu", "Other"))
                   )
     )
 
@@ -159,6 +165,11 @@ gitlog_commits <- gitlog_commits %>%
   mutate(committer_first_commit_age=as.numeric(ymd("2018-03-01") - min(commit_date)))
 ```
 
+```{r export_gitlog_commits}
+saveRDS(gitlog_commits, "data/gitlog_commits.Rds")
+```
+
+
 # Host Summaries
 
 Summarize activity by host for different periods of time.
@@ -166,18 +177,27 @@ Summarize activity by host for different periods of time.
 ```{r authors_by_month}
 
 authors_month <- gitlog_commits %>%
+  group_by(commit_month) %>%
+  mutate(total_authors=n_distinct(author_email)) %>%
   group_by(commit_month, author_domain) %>%
   summarise(num_authors=n_distinct(author_email), 
             has_authors=1,
-            author_domain_type=first(author_domain_type))
+            author_domain_type=first(author_domain_type),
+            pct_authors=round(num_authors/first(total_authors), 4))
+
+# This is used by a blog entry - TODO (link)
+saveRDS(authors_month, "data/authors_month.Rds")
 
 ```
 
 ```{r commits_by_month}
 
 author_commits_month <- gitlog_commits %>%
+  group_by(commit_month) %>%
+  mutate(total_commits=n()) %>%
   group_by(commit_month, author_domain) %>%
   summarise(num_commits=n(), 
+            pct_commits=round(num_comits/first(total_commits),4),
             has_commits=1, 
             author_domain_type=first(author_domain_type),
             author_is_edu=first(author_is_edu), 
@@ -191,8 +211,11 @@ author_commits_month <- gitlog_commits %>%
 ```{r commits_by_quarter}
 
 author_commits_quarter <- gitlog_commits %>%
+  group_by(commit_quarter) %>%
+  mutate(total_commits=n()) %>%
   group_by(commit_quarter, author_domain) %>%
   summarise(num_commits=n(), 
+            pct_commits=round(num_comits/first(total_commits),4),
             has_commits=1, 
             author_domain_type=first(author_domain_type),
             author_is_edu=first(author_is_edu), 
@@ -206,8 +229,11 @@ author_commits_quarter <- gitlog_commits %>%
 ```{r commits_by_halfyear}
 
 author_commits_halfyear <- gitlog_commits %>%
+  group_by(commit_halfyear) %>%
+  mutate(total_commits=n()) %>%
   group_by(commit_halfyear, author_domain) %>%
   summarise(num_commits=n(), 
+            pct_commits=round(num_comits/first(total_commits),4),
             has_commits=1, 
             author_domain_type=first(author_domain_type),
             author_is_edu=first(author_is_edu), 
@@ -225,8 +251,12 @@ author_commits_halfyear <- gitlog_commits %>%
 ```{r num_authors, fig.height=10, fig.width=10}
 
 author_summary <- gitlog_commits %>%
+  ungroup() %>%
+  mutate(total_authors = n_distinct(author_email)) %>%
   group_by(author_domain) %>%
   summarise(num_authors = n_distinct(author_email),
+            total_authors=first(total_authors),
+            pct_authors = round(num_authors/first(total_authors), 2),
             author_domain_type = first(author_domain_type))
 
 ggplot(author_summary %>% top_n(20, num_authors), 
@@ -247,6 +277,15 @@ ggplot(author_summary %>% filter(author_domain_type == "Other") %>% top_n(10, nu
   labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top 10 Total Authors by Company") +
   guides(fill=guide_legend(title="Domain Type"))
 
+ggplot(author_summary %>% filter(pct_authors > 0), 
+       aes(x=reorder(author_domain, pct_authors), y=pct_authors)) +
+  geom_bar(aes(fill=author_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top Authors by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
 ```
 
 By Month
@@ -258,10 +297,19 @@ top_author_domains <- author_summary %>%
   top_n(10, num_authors) %>% 
   select(author_domain)
 
+saveRDS(top_author_domains, "data/top_author_domains.Rds")
+
 # TODO Density
 
 ggplot(authors_month, 
        aes(x=commit_month, y=num_authors)) +
+  geom_bar(aes(fill=author_domain_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="Authors", title="Tensorflow - Authors per Month") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(authors_month, 
+       aes(x=commit_month, y=pct_authors)) +
   geom_bar(aes(fill=author_domain_type), position="dodge", stat="identity") +
   theme_few() +
   labs(x="Commit Month", y="Authors", title="Tensorflow - Authors per Month") +
@@ -272,9 +320,17 @@ ggplot(authors_month %>%
        aes(x=commit_month, y=num_authors)) +
   geom_bar(aes(fill=author_domain), position="dodge", stat="identity") +
   theme_few() +
-  labs(x="Commit Month", y="Commits", title="Tensorflow - Top Authors per Month") +
+  labs(x="Commit Month", y="Authors", title="Tensorflow - Top Authors per Month") +
   guides(fill=guide_legend(title="Author Email Domain"))
 
+
+ggplot(authors_month %>% 
+         filter(commit_month > "2016-12-31" & author_domain %in% top_author_domains$author_domain), 
+       aes(x=commit_month, y=pct_authors)) +
+  geom_bar(aes(fill=author_domain), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="Authors", title="Tensorflow - Top Authors per Month") +
+  guides(fill=guide_legend(title="Author Email Domain"))
 ```
 
 ## Number of Commits
@@ -399,7 +455,7 @@ ggplot(author_commits_month_filtered %>%
 
 ## Commit Quarters
 
-```{r plot_commits_month, fig.height=12, fig.width=12}
+```{r plot_commits_quarters, fig.height=12, fig.width=12}
 
 author_commits_quarter_filtered <- author_commits_quarter %>%
   filter((!author_domain %in% googler_domains) & 

@@ -1,0 +1,221 @@
+---
+title: "Tensorflow Committers"
+author: "Augustina Ragwitz"
+date: "February 22, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r includes, message = FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(igraph)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(visNetwork)
+```
+
+```{r gitlog_commits}
+# taken from tensorflow_authors.Rmd
+
+gitlog_commits <- readRDS("data/gitlog_commits.Rds")
+
+gitlog_committers <- gitlog_commits %>%
+  rename(name=committer_name, 
+         email=committer_email)
+```
+
+
+```{r committers_graph}
+gh_committers_by_email <- gitlog_committers %>%
+  arrange(desc(commit_date)) %>%
+  group_by(email, name) %>%
+  summarise(num_commits = n(), 
+            last_commit=max(commit_date)) %>%
+  arrange(desc(last_commit)) 
+
+gh_committers_join1 <- gh_committers_by_email %>%
+  inner_join(gh_committers_by_email %>% select(name, email) %>% rename(name2=name), "email") %>%
+  unique()
+
+gh_committers_join <- gh_committers_join1 %>%
+  inner_join(gh_committers_join1 %>% select(name, email) %>% rename(email2=email), "name") %>%
+  unique()
+
+gh_committers_emails <- gh_committers_join %>%
+  select(email, email2) %>%
+  unique()
+
+# this might need to be directed in the future based on commit dates
+gh_committers_emails_graph <- graph_from_data_frame(gh_committers_emails, 
+                                          directed=FALSE,
+                                          vertices=unique(gh_committers_emails$email2))
+
+E(gh_committers_emails_graph)$weight <- 1
+gh_emails_graph <- simplify(gh_committers_emails_graph, 
+                            edge.attr.comb=list(
+                              weight = "sum", transaction_amount = "sum", function(x)length(x)))
+
+# identify clusters
+gh_emails_networks <- clusters(as.undirected(gh_emails_graph))
+V(gh_emails_graph)$network <- gh_emails_networks$membership
+
+gh_emails_nodes <- get.data.frame(gh_emails_graph, what="vertices")
+gh_emails_lookup <- gh_emails_nodes %>% select(name, network) %>% rename(email=name)
+
+# join with network id
+gitlog_parsed_networks <- merge(gitlog_committers,
+                            gh_emails_lookup,
+                            by="email")
+
+paste("identified", max(gitlog_parsed_networks$network),"unique committers from", n_distinct(gh_emails_lookup$email),"emails")
+```
+
+
+```{r test_df}
+test_df <- gh_committers_emails %>% filter(str_detect(email, "google"))
+
+test_df_graph <- graph_from_data_frame(test_df, 
+                                          directed=FALSE,
+                                          vertices=unique(test_df$email2))
+
+E(test_df_graph)$weight <- 1
+test_df_graph2 <- simplify(test_df_graph, 
+                            edge.attr.comb=list(
+                              weight = "sum", transaction_amount = "sum", function(x)length(x)))
+
+# identify clusters
+test_df_networks <- clusters(as.undirected(test_df_graph2))
+V(test_df_graph2)$network <- test_df_networks$membership
+
+test_df_nodes <- get.data.frame(test_df_graph2, what="vertices")
+
+test_df_nodes <- data.frame(id = test_df_nodes$name, 
+                               title = test_df_nodes$name, 
+                               group = test_df_nodes$network)
+
+test_df_nodes <- test_df_nodes[order(test_df_nodes$id, decreasing = F),]
+saveRDS(test_df_nodes, "data/tf_google_committers_nodes.Rds")
+
+test_df_edges <- get.data.frame(test_df_graph2, what="edges")[1:2]
+saveRDS(test_df_edges, "data/tf_google_committers_edges.Rds")
+
+visNetwork(test_df_nodes, test_df_edges) %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE)
+```
+
+## Number of Committers
+
+```{r committers_dedup}
+
+# is any in network google
+
+gitlog_commits_is_google <- gitlog_parsed_networks %>%
+  group_by(network) %>%
+  mutate(is_google_dedup=any(committer_domain == "google")) %>%
+  ungroup() %>%
+  mutate(
+    commit_is_google = committer_is_google | is_google_dedup,
+    committer_domain_type=ifelse(commit_is_google, "Google", committer_domain_type))
+
+```
+
+```{r num_committers, fig.height=10, fig.width=10}
+committer_summary <- gitlog_commits_is_google %>%
+  group_by(committer_domain) %>%
+  summarise(num_committers = n_distinct(network),
+            committer_domain_type = first(committer_domain_type),
+            num_google = sum(commit_is_google))
+
+ggplot(committer_summary %>% top_n(20, num_committers), 
+       aes(x=reorder(committer_domain, num_committers), y=num_committers)) +
+  geom_bar(aes(fill=committer_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="committer Email Domain", y="committers", title="Tensorflow - Total committers by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(committer_summary %>% filter(committer_domain_type == "Other") %>% top_n(10, num_committers), 
+       aes(x=reorder(committer_domain, num_committers), y=num_committers)) +
+  geom_bar(aes(fill=committer_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="committer Email Domain", y="committers", title="Tensorflow - Top 10 Total committers by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+```
+By Month
+
+```{r num_committers_month, fig.height=10, fig.width=10}
+
+committers_month <- 
+
+top_committer_domains <- committer_summary %>% 
+  top_n(10, num_committers) %>% 
+  select(committer_domain)
+
+saveRDS(top_committer_domains, "data/top_committer_domains.Rds")
+
+# TODO Density
+
+ggplot(committers_month, 
+       aes(x=commit_month, y=num_committers)) +
+  geom_bar(aes(fill=committer_domain_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="committers", title="Tensorflow - committers per Month") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(committers_month %>% 
+         filter(committer_domain %in% top_committer_domains$committer_domain), 
+       aes(x=commit_month, y=num_committers)) +
+  geom_bar(aes(fill=committer_domain), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="committers", title="Tensorflow - Top committers per Month") +
+  guides(fill=guide_legend(title="committer Email Domain", ncol=2))
+
+ggplot(committers_month %>% 
+         filter(commit_month < "2017-01-01", committer_domain %in% top_committer_domains$committer_domain), 
+       aes(x=commit_month, y=num_committers)) +
+  geom_bar(aes(fill=committer_domain), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="committers", title="Tensorflow - Top committers per Month") +
+  guides(fill=guide_legend(title="committer Email Domain", ncol=2))
+
+```
+
+```{r}
+committers_month_domain_type <- gitlog_commits_is_google %>%
+  ungroup() %>%
+  group_by(commit_month) %>%
+  mutate(total_commits = n()) %>%
+  group_by(commit_month, committer_domain_type) %>%
+  summarise(num_committers=n_distinct(network),
+            pct_committers=round(num_committers/total_commits,4))
+
+ggplot(committers_month_domain_type %>% 
+         filter(commit_month < "2017-01-01"), 
+       aes(x=commit_month, y=num_committers)) +
+  geom_bar(aes(fill=committer_domain_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="committers", title="Tensorflow - Top committers per Month") +
+  guides(fill=guide_legend(title="Committer Email Type"))
+
+committers_is_google <- gitlog_commits_is_google %>%
+  group_by(commit_month, commit_is_google) %>%
+  summarise(num_committers=n_distinct(network))
+
+ggplot(committers_is_google, 
+       aes(x=commit_month, y=num_committers)) +
+  geom_bar(aes(fill=commit_is_google), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="committers", title="Tensorflow - Top committers per Month") +
+  guides(fill=guide_legend(title="Google?"))
+```
+
