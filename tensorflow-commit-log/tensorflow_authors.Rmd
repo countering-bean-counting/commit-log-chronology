@@ -386,7 +386,7 @@ ggplot(author_commits_month %>%
        aes(x=commit_month, y=num_commits)) +
   geom_bar(aes(fill=author_domain), position="dodge", stat="identity") +
   theme_few() +
-  labs(x="Commit Month", y="Commits", title="Tensorflow - Top Committers Commits per Month") +
+  labs(x="Commit Month", y="Commits", title="Tensorflow - Top Authors Commits per Month") +
   guides(fill=guide_legend(title="Author Email Domain"))
 
 ```
