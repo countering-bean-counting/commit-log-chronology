@@ -291,13 +291,18 @@ ggplot(early_committers_summary,
 
 ```{r num_authors, fig.height=10, fig.width=10}
 author_summary <- gitlog_commits_is_google %>%
+  ungroup() %>%
+  mutate(total_authors = n_distinct(author_email)) %>%
   group_by(author_domain) %>%
   mutate(num_authors=n_distinct(author_group)) %>%
   ungroup() %>%
   group_by(author_domain, author_domain_type) %>%
   summarise(num_authors_type = n_distinct(author_group),
-            num_authors = first(num_authors)) %>%
+            num_authors = first(num_authors),
+            pct_authors = round(num_authors_type/first(total_authors), 2)) %>%
   ungroup()
+
+saveRDS(author_summary, "data/tf_author_summary_network.Rds")
 
 ggplot(author_summary %>% top_n(20, num_authors), 
        aes(x=reorder(author_domain, num_authors), y=num_authors_type)) +
