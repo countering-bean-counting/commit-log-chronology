@@ -1,1 +1,1 @@
-# Understanding Organizational and Individual Engagement in Open Source projects through the git commit log
+# Understanding Organizational and Individual Open Source Engagement via the git commit log
