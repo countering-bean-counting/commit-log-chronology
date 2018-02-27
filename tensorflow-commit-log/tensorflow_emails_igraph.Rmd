@@ -1,7 +1,7 @@
 ---
-title: "Tensorflow Committers"
+title: "Applying a Network to Tensorflow Commit Emails"
 author: "Augustina Ragwitz"
-date: "February 22, 2018"
+date: "February 26, 2018"
 output: html_document
 ---
 
@@ -22,13 +22,17 @@ library(tidyr)
 library(visNetwork)
 ```
 
+# Overview
+
+Does this buy us anything?
+
+
 ```{r gitlog_commits}
 # taken from tensorflow_authors.Rmd
 
 gitlog_commits <- readRDS("data/gitlog_commits.Rds")
 
 ```
-
 
 ```{r committers_lookup}
 gh_committers_by_email <- gitlog_commits %>%
@@ -172,9 +176,23 @@ gh_emails_edges_google <- gh_emails_edges %>%
   
 saveRDS(gh_emails_edges_google, "data/tf_google_email_edges.Rds")
 
-visNetwork(gh_emails_nodes_google, gh_emails_edges_google) %>%
+gh_emails_graph <- visNetwork(gh_emails_nodes_google, gh_emails_edges_google) %>%
   visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE)
+
+gh_emails_graph
 ```
+```{r export_graph}
+
+# Export for embedding into the blog entry
+# manually open HTML and save as in web browser
+visSave(gh_emails_graph, "gh_emails_graph.html", 
+        selfcontained = TRUE, background = "white")
+
+# visSave doesn't use relative paths
+system("mv gh_emails_graph.html data/gh_emails_graph")
+
+```
+
 
 ## Number of Committers
 
@@ -289,6 +307,7 @@ ggplot(early_committers_summary,
 
 ## Number of authors
 
+
 ```{r num_authors, fig.height=10, fig.width=10}
 author_summary <- gitlog_commits_is_google %>%
   ungroup() %>%
@@ -370,3 +389,35 @@ ggplot(authors_month_is_google,
 
 ```
 
+## Commits
+
+```{r commits_by_month}
+
+author_commits_month <- gitlog_commits_is_google %>%
+  group_by(commit_month) %>%
+  mutate(total_commits=n()) %>%
+  group_by(commit_month, author_domain, author_domain_type) %>%
+  summarise(num_commits=n(), 
+            pct_commits=round(num_commits/first(total_commits),4),
+            has_commits=1) %>%
+  group_by(author_domain) %>%
+  mutate(total_commit_months=n_distinct(commit_month))
+
+saveRDS(author_commits_month, "data/tf_author_commits_month.Rds")
+
+```
+
+```{r commits_by_quarter}
+
+author_commits_quarter <- gitlog_commits_is_google %>%
+  group_by(commit_quarter) %>%
+  mutate(total_commits=n()) %>%
+  group_by(commit_quarter, author_domain, author_domain_type) %>%
+  summarise(num_commits=n(), 
+            pct_commits=round(num_commits/first(total_commits),4),
+            has_commits=1) %>%
+  group_by(author_domain) %>%
+  mutate(total_commit_quarters=n_distinct(commit_quarter))
+
+saveRDS(author_commits_quarter, "data/tf_author_commits_quarter.Rds")
+```

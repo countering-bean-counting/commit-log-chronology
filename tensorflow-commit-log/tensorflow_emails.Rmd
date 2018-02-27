@@ -1,7 +1,7 @@
 ---
-title: "Tensorflow Authors"
+title: "Identifying Tensorflow Authors + Committers by Email Address"
 author: "Augustina Ragwitz"
-date: "February 22, 2018"
+date: "February 26, 2018"
 output: html_document
 params:
   git_url: "git@github.com:tensorflow/tensorflow.git"
@@ -145,13 +145,17 @@ gitlog_commits <- gitlog_commits_dates %>%
     author_domain_type = 
            ifelse(author_is_google, "Google",
                   ifelse(author_hosted_email, "Personal",
-                         ifelse(author_is_edu, "Edu", "Other"))
+                         ifelse(author_is_edu, "Edu", "Other")
+                                )
                   ),
+    author_domain_type=ifelse(is.na(author_domain), "Local", author_domain_type),
     committer_domain_type =  
            ifelse(committer_is_google, "Google",
                   ifelse(committer_hosted_email, "Personal",
-                         ifelse(committer_is_edu, "Edu", "Other"))
-                  )
+                         ifelse(committer_is_edu, "Edu", "Other")
+                         )
+                  ),
+    committer_domain_type=ifelse(is.na(committer_domain), "Local", committer_domain_type)
     )
 
 ```
@@ -257,6 +261,14 @@ author_summary <- gitlog_commits %>%
 
 saveRDS(author_summary, "data/tf_author_summary.Rds")
 
+ggplot(author_summary %>% group_by(author_domain_type) %>% summarize(num_authors=sum(num_authors_type)),
+       aes(x=author_domain_type, y=num_authors)) +
+  geom_bar(aes(fill=reorder(author_domain_type, num_authors)), stat="identity", show.legend = FALSE) +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="Author Email Domain Type", y="Authors", title="Tensorflow - Total Authors by Domain Type")
+
 ggplot(author_summary %>% top_n(20, num_authors), 
        aes(x=reorder(author_domain, num_authors), y=num_authors)) +
   geom_bar(aes(fill=author_domain_type), stat="identity") +
@@ -280,8 +292,8 @@ ggplot(author_summary %>% filter(pct_authors > 0),
   geom_bar(aes(fill=author_domain_type), stat="identity") +
   coord_flip() +
   theme_few() +
-  scale_y_continuous(breaks=pretty_breaks()) +
-  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top Authors by Company") +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top Authors by Email Domain") +
   guides(fill=guide_legend(title="Domain Type"))
 
 ```
