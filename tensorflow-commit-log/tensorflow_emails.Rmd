@@ -34,7 +34,10 @@ Project version control commit histories are the authoritative open history of a
 
 Traditional analysis of commit histories tend to focus on simple summary statistics like numbers of commits or lines of code often to create a leaderboard ranking of authors. This report takes history analysis a step further by looking at author trends from a macro level, rather than at an indvidual level. The goal of this analysis is to discover what the commit history can tell us about a project's overall activity level, trends, and growth potential. 
 
-This report serves two purposes. The original inspiration came from a request to better understand how Github was determining the contributor metrics it was reporting on it's website for the Tensorflow project. The second purpose is to test and refine participation metrics from other ongoing research efforts that could identify a high activity, growing project.
+## Commits and Authors
+
+The traditional commit and author count paradigm tells us little about the nature of an organization's involvement in a project. This notebook demonstrates the process of extracting email addresses from commits in the git log for the Tensorflow project and shows the distribution of domains of those email addresses to illustrate the challenges of identification using this method. In response to the challenges of accurate identification, this notebook poses the suggestion that the use of time intervals instead of frequency totals is sufficient to indicate an organization engagement in a project through commits. Note that project engagement is a much larger topic and commits alone are insufficient to determine an organization's overall project engagement.
+
 
 This notebook lives in Github and is the first in a series: https://github.com/countering-bean-counting/commit-log-chronology/tensorflow-commit-log
 
@@ -99,6 +102,7 @@ gitlog_commits_dates <- gitlog_raw %>%
 ## Extract Email Domains
 
 ```{r email_providers}
+# these will be labeled as "Personal"
 email_providers <- c("126",
                      "163",
                      "github",
@@ -245,6 +249,10 @@ author_commits_halfyear <- gitlog_commits %>%
 
 ## Number of Authors
 
+When summarizing the number of unique authors by domain type, we see a huge proportion of Gmail addresses followed by Github and Google. The majority of the rest are other email provider addresses with only a few company domains landing in the top. Github addresses are the result of activity happening directly on the Github website or commits made through an associated Github account where the author chose to not display their real email address.
+
+The heavy use of these email provider addresses makes it very challenging to count authors with any amount of precision.
+
 ```{r num_authors, fig.height=10, fig.width=10}
 
 author_summary <- gitlog_commits %>%
@@ -256,7 +264,7 @@ author_summary <- gitlog_commits %>%
   group_by(author_domain, author_domain_type) %>%
   summarise(num_authors_type = n_distinct(author_email),
             num_authors = first(num_authors),
-            pct_authors = round(num_authors_type/first(total_authors), 2)) %>%
+            pct_authors = round(num_authors_type/first(total_authors), 4)) %>%
   ungroup()
 
 saveRDS(author_summary, "data/tf_author_summary.Rds")
@@ -278,16 +286,7 @@ ggplot(author_summary %>% top_n(20, num_authors),
   labs(x="Author Email Domain", y="Authors", title="Tensorflow - Total Authors by Company") +
   guides(fill=guide_legend(title="Domain Type"))
 
-ggplot(author_summary %>% filter(author_domain_type == "Other") %>% top_n(10, num_authors), 
-       aes(x=reorder(author_domain, num_authors), y=num_authors)) +
-  geom_bar(aes(fill=author_domain_type), stat="identity") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(breaks=pretty_breaks()) +
-  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top 10 Total Authors by Company") +
-  guides(fill=guide_legend(title="Domain Type"))
-
-ggplot(author_summary %>% filter(pct_authors > 0), 
+ggplot(author_summary %>% filter(round(pct_authors, 2) > 0), 
        aes(x=reorder(author_domain, pct_authors), y=pct_authors)) +
   geom_bar(aes(fill=author_domain_type), stat="identity") +
   coord_flip() +
@@ -297,6 +296,30 @@ ggplot(author_summary %>% filter(pct_authors > 0),
   guides(fill=guide_legend(title="Domain Type"))
 
 ```
+
+This plot filters out the email providers and Google email addresses. The percentage plot is meant to show what a small proportion this represents.
+
+```{r}
+ggplot(author_summary %>% filter(author_domain_type %in% c("Other", "Edu")) %>% top_n(10, num_authors), 
+       aes(x=reorder(author_domain, num_authors), y=num_authors)) +
+  geom_bar(aes(fill=author_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top Authors by Email Domain") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(author_summary %>% 
+         filter(author_domain_type %in% c("Other", "Edu")) %>% top_n(10, pct_authors), 
+       aes(x=reorder(author_domain, pct_authors), y=pct_authors)) +
+  geom_bar(aes(fill=author_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  labs(x="Author Email Domain", y="Authors", title="Tensorflow - Top Authors by Email Domain (%)") +
+  guides(fill=guide_legend(title="Domain Type"))
+```
+
 
 By Month
 

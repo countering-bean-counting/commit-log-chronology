@@ -194,7 +194,7 @@ system("mv gh_emails_graph.html data/gh_emails_graph")
 ```
 
 
-## Number of Committers
+# Number of Committers
 
 ```{r committers_dedup}
 
@@ -218,6 +218,8 @@ committer_summary <- gitlog_commits_is_google %>%
             num_committers = first(num_committers)) %>%
   ungroup()
 
+saveRDS(committer_summary, "data/tf_committer_summary_network.Rds")
+
 ggplot(committer_summary %>% top_n(15, num_committers), 
        aes(x=reorder(committer_domain, num_committers), y=num_committers_type)) +
   geom_bar(aes(fill=committer_domain_type), stat="identity", position="dodge") +
@@ -237,7 +239,7 @@ ggplot(committer_summary %>% filter(committer_domain_type == "Other") %>% top_n(
   guides(fill=guide_legend(title="Domain Type"))
 
 ```
-By Month
+## By Month
 
 ```{r committers_by_month}
 
@@ -266,46 +268,7 @@ ggplot(committers_month,
 
 ```
 
-
-```{r num_committers_month_early, fig.height=10, fig.width=10}
-ggplot(committers_month %>% filter(commit_month < "2016-03-01"), 
-       aes(x=commit_month, y=num_committers)) +
-  geom_bar(aes(fill=committer_domain), position="dodge", stat="identity") +
-  theme_few() +
-  labs(x="Commit Month", y="committers", title="Tensorflow - Top Committers per Month") +
-  guides(fill=guide_legend(title="Domain"))
-```
-
-```{r early_committers, fig.height=10, fig.width=10}
-
-early_committers_summary <- gitlog_commits_is_google %>%
-  filter(commit_month < "2016-03-01") %>%
-  group_by(commit_month) %>%
-  mutate(total_commits=n()) %>%
-  ungroup() %>%
-  group_by(committer_group) %>%
-  arrange(desc(commit_month)) %>%
-  mutate(
-    committer = first(committer_name),
-    committer_email = first(committer_email),
-    is_google = any(committer_domain_type=="Google")
-  ) %>% 
-  group_by(commit_month, committer_group) %>%
-  mutate(num_commits=n(), pct_commits=round(num_commits/total_commits, 4))
-  
-ggplot(early_committers_summary, 
-       aes(x=committer, y=pct_commits)) +
-  geom_bar(aes(fill=is_google), position="dodge", stat="identity") +
-  theme_few() +
-  coord_flip() +
-  labs(x="Committer", y="Commits", title="Tensorflow") +
-  guides(fill=guide_legend(title="Google?")) +
-  facet_wrap(~ commit_month, scales="free")
-```
-
-
-
-## Number of authors
+# Number of Authors
 
 
 ```{r num_authors, fig.height=10, fig.width=10}
@@ -342,7 +305,8 @@ ggplot(author_summary %>% filter(author_domain_type == "Other") %>% top_n(10, nu
   guides(fill=guide_legend(title="Domain Type"))
 
 ```
-By Month
+
+## By Month
 
 ```{r commiters_by_month}
 
@@ -355,69 +319,9 @@ authors_month <- gitlog_commits_is_google %>%
 
 ```
 
-Compare network vs non for contributor diversity
 
-```{r num_authors_month, fig.height=10, fig.width=10}
+# Gains?
 
-ggplot(authors_month, 
-       aes(x=commit_month, y=num_authors_type)) +
-  geom_bar(aes(fill=author_domain_type), position="dodge", stat="identity") +
-  theme_few() +
-  labs(x="Commit Month", y="authors", title="Tensorflow - authors per Month") +
-  guides(fill=guide_legend(title="Domain Type"))
+Was the added complexity worth it?
 
-
-```
-
-```{r}
-authors_month_is_google <- authors_month %>%
-  mutate(is_google=author_domain_type=="Google") %>%
-  group_by(commit_month, is_google) %>%
-  summarise(num_authors_type=sum(num_authors_type),
-            pct_authors=round(num_authors_type/first(num_authors), 4))
-```
-
-```{r num_authors_month_type, fig.height=10, fig.width=10}
-
-ggplot(authors_month_is_google, 
-       aes(x=commit_month, y=num_authors_type)) +
-  geom_bar(aes(fill=is_google), position="dodge", stat="identity") +
-  theme_few() +
-  labs(x="Commit Month", y="Authors", title="Tensorflow - Authors per Month") +
-  guides(fill=guide_legend(title="Google?"))
-
-
-```
-
-## Commits
-
-```{r commits_by_month}
-
-author_commits_month <- gitlog_commits_is_google %>%
-  group_by(commit_month) %>%
-  mutate(total_commits=n()) %>%
-  group_by(commit_month, author_domain, author_domain_type) %>%
-  summarise(num_commits=n(), 
-            pct_commits=round(num_commits/first(total_commits),4),
-            has_commits=1) %>%
-  group_by(author_domain) %>%
-  mutate(total_commit_months=n_distinct(commit_month))
-
-saveRDS(author_commits_month, "data/tf_author_commits_month.Rds")
-
-```
-
-```{r commits_by_quarter}
-
-author_commits_quarter <- gitlog_commits_is_google %>%
-  group_by(commit_quarter) %>%
-  mutate(total_commits=n()) %>%
-  group_by(commit_quarter, author_domain, author_domain_type) %>%
-  summarise(num_commits=n(), 
-            pct_commits=round(num_commits/first(total_commits),4),
-            has_commits=1) %>%
-  group_by(author_domain) %>%
-  mutate(total_commit_quarters=n_distinct(commit_quarter))
-
-saveRDS(author_commits_quarter, "data/tf_author_commits_quarter.Rds")
-```
+TODO...
