@@ -1,0 +1,433 @@
+---
+title: "Tensorflow Email Diversity"
+author: "Augustina Ragwitz"
+date: "February 26, 2018"
+output: html_document
+params:
+  git_url: "git@github.com:tensorflow/tensorflow.git"
+  git_repo: "tensorflow"
+  git_path: "data"
+  gitlog_sha: ''
+  gitlog_out: 'gitlog_tensorflow_tensorflow.txt'
+  gh_repo: "tensorflow/tensorflow"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(gh)
+library(igraph)
+library(lubridate)
+library(readr)
+library(reshape2)
+library(scales)
+library(stringr)
+library(tidyr)
+library(urltools)
+library(visNetwork)
+```
+
+# Overview
+
+Project version control commit histories are the authoritative open history of an open source community. That is not to say that contributions outside of commits are less important or interesting, but version control commit histories are clearly documented points in time associated with a project's artifacts.
+
+Traditional analysis of commit histories tend to focus on simple summary statistics like numbers of commits or lines of code often to create a leaderboard ranking of authors. This report takes history analysis a step further by looking at author trends from a macro level, rather than at an indvidual level. The goal of this analysis is to discover what the commit history can tell us about a project's overall activity level, trends, and growth potential. 
+
+## Commits and Authors
+
+The traditional commit and author count paradigm tells us little about the nature of an organization's involvement in a project. This notebook demonstrates the process of extracting email addresses from commits in the git log for the Tensorflow project and shows the distribution of domains of those email addresses to illustrate the challenges of identification using this method. In response to the challenges of accurate identification, this notebook poses the suggestion that the use of time intervals instead of frequency totals is sufficient to indicate an organization engagement in a project through commits. Note that project engagement is a much larger topic and commits alone are insufficient to determine an organization's overall project engagement.
+
+
+This notebook lives in Github and is the first in a series: https://github.com/countering-bean-counting/commit-log-chronology/tensorflow-commit-log
+
+# Setup Instructions
+
+To use this notebook, you first need to clone the Tensorflow repository (ideally in the "data" folder within the same location as this notebook).
+
+```{r, git_clone_tf}
+# Clone the repo into the data directory for this project
+paste0("git clone ", params$git_url, " ", getwd(),'/', params$git_path, "/", params$git_repo)
+
+# Get the current SHA and update the params
+gitlog_sha <- system(paste0("cd ", params$git_path, "/", params$git_repo, 
+                                   "; git rev-parse HEAD"),  intern = TRUE)
+```
+
+This notebook sets the SHA used for the analysis as a parameter to ensure reproducibility. If you want to run this against the latest changes, update the SHA in the parameters to the latest one in your local repository.
+
+# Get Git Commit Log
+
+```{r git_log}
+
+git_log_cmd <- paste0('cd ', params$git_path,"/", params$git_repo, 
+                     '; git log ', gitlog_sha, 
+                     #' --no-merges ',
+                     ' --date=short --pretty=tformat:"%ad|%an|%ae|%cd|%cn|%ce|%h" > ', "../", params$gitlog_out)
+system(git_log_cmd)
+
+git_log_cmd
+```
+
+```{r gitlog_raw}
+
+gitlog_raw <- read.csv(paste0(params$git_path, "/", params$gitlog_out),
+                       header = FALSE, sep = "|", quote="",
+                       col.names=c("author_date", "author_name", "author_email", 
+                                 "committer_date", "committer_name", "committer_email", 
+                                 "sha"))
+```
+
+## Create Time Intervals
+
+```{r gitlog_dates}
+# fix names and emails to be all lowercase
+gitlog_commits_dates <- gitlog_raw %>% 
+  mutate(
+         author_date=as.Date(author_date, tz="UTC"),
+         committer_date=as.Date(committer_date, tz="UTC")
+    ) %>% 
+  mutate(
+    commit_date=ymd(committer_date),
+    commit_year=floor_date(commit_date, "year"),
+    commit_halfyear=floor_date(commit_date, "halfyear"),
+    commit_quarter=floor_date(commit_date, "quarter"),
+    commit_month=floor_date(commit_date, "month"),
+    commit_bimonth=floor_date(commit_date, "bimonth"),
+    commit_week=floor_date(commit_date, "week")
+  )
+```
+
+
+## Extract Email Domains
+
+```{r email_providers}
+# these will be labeled as "Personal"
+email_providers <- c("126",
+                     "163",
+                     "github",
+                     "gmail",
+                     "googlemail",
+                     "hotmail",
+                     "live",
+                     "me",
+                     "naver",
+                     "outlook",
+                     "qq",
+                     "yahoo")
+
+googler_domains <- c("google", 
+                     "tensorflow", 
+                     "petewarden", 
+                     "vomjom", 
+                     "babuschk", 
+                     "naml")
+```
+
+```{r}
+
+gitlog_commits <- gitlog_commits_dates %>% 
+  mutate(
+         author_name=str_to_lower(author_name),
+         author_email=str_to_lower(author_email),
+         committer_name=str_to_lower(committer_name),
+         committer_email=str_to_lower(committer_email)
+    ) %>% 
+  separate(author_email, c("author_username", "author_host"), sep="@", remove=FALSE) %>%
+  separate(committer_email, c("committer_username", "committer_host"), sep="@", remove=FALSE) %>%
+  mutate(
+    author_domain=suffix_extract(author_host)$domain,
+    author_suffix=suffix_extract(author_host)$suffix,
+    author_is_edu=str_detect(author_suffix, "edu")|str_detect(author_suffix, "ac."),
+    committer_domain=suffix_extract(committer_host)$domain,
+    committer_suffix=suffix_extract(committer_host)$suffix,
+    committer_is_edu=str_detect(committer_suffix, "edu")|str_detect(committer_suffix, "ac."),
+    author_hosted_email=author_domain %in% email_providers,
+    committer_hosted_email=committer_domain != "github" & committer_domain %in% email_providers,
+    author_is_google = author_domain %in% googler_domains,
+    committer_is_google = committer_domain %in% googler_domains | committer_domain == "github",
+    author_domain_type = 
+           ifelse(author_is_google, "Google",
+                  ifelse(author_hosted_email, "Personal",
+                         ifelse(author_is_edu, "Edu", "Other")
+                                )
+                  ),
+    author_domain_type=ifelse(is.na(author_domain), "Local", author_domain_type),
+    committer_domain_type =  
+           ifelse(committer_is_google, "Google",
+                  ifelse(committer_hosted_email, "Personal",
+                         ifelse(committer_is_edu, "Edu", "Other")
+                         )
+                  ),
+    committer_domain_type=ifelse(is.na(committer_domain), "Local", committer_domain_type)
+    )
+
+```
+
+```{r commit_age}
+gitlog_commits <- gitlog_commits %>%
+  group_by(author_domain) %>%
+  mutate(author_first_commit_age=as.numeric(ymd("2017-10-01") - min(commit_date))) %>%
+  ungroup() %>%
+  group_by(committer_domain) %>%
+  mutate(committer_first_commit_age=as.numeric(ymd("2018-03-01") - min(commit_date)))
+```
+
+```{r export_gitlog_commits}
+saveRDS(gitlog_commits, paste0("data/", params$repo, "_gitlog_commits.Rds"))
+```
+
+```{r committers_lookup}
+gh_committers_by_email <- gitlog_commits %>%
+  rename(name=committer_name, email=committer_email) %>%
+  arrange(desc(commit_date)) %>%
+  group_by(email, name) %>%
+  summarise(last_commit=max(commit_date)) %>%
+  arrange(desc(last_commit)) 
+
+gh_committers_join1 <- gh_committers_by_email %>%
+  inner_join(gh_committers_by_email %>% select(name, email) %>% rename(name2=name), "email") %>%
+  unique()
+
+gh_committers_join <- gh_committers_join1 %>%
+  inner_join(gh_committers_join1 %>% select(name, email) %>% rename(email2=email), "name") %>%
+  unique()
+
+rm(gh_committers_join1)
+
+```
+
+```{r authors_lookup}
+
+# group commits by email address and name
+gh_authors_by_email <- gitlog_commits %>%
+  rename(name=author_name, email=author_email) %>%
+  arrange(desc(commit_date)) %>%
+  group_by(email, name) %>%
+  summarise(num_commits = n(), 
+            last_commit=max(commit_date)) %>%
+  arrange(desc(last_commit))
+
+# join on name to show emails tied to the same names
+gh_authors_join1 <- gh_authors_by_email %>%
+  inner_join(gh_authors_by_email %>% select(name, email) %>% rename(name2=name), "email") %>%
+  unique()
+
+# join on email to show names tied to the same emails
+gh_authors_join <- gh_authors_join1 %>%
+  inner_join(gh_authors_join1 %>% select(name, email) %>% rename(email2=email), "name") %>%
+  unique()
+
+rm(gh_authors_join1)
+
+```
+
+```{r join_emails}
+gh_emails <- bind_rows(gh_authors_join %>% select(email, email2), gh_committers_join %>% select(email, email2))
+gh_emails <- gh_emails %>% unique()
+
+gh_emails %>% filter(str_detect(email, "keveman"))
+```
+
+
+```{r emails_graph, warning=FALSE}
+
+# this might need to be directed in the future based on commit dates
+gh_emails_graph_big <- graph_from_data_frame(gh_emails,
+                                             directed=FALSE,
+                                             vertices=unique(gh_emails$email2))
+
+E(gh_emails_graph_big)$weight <- 1
+gh_emails_graph <- simplify(gh_emails_graph_big, 
+                            edge.attr.comb=list(
+                              weight = "sum", 
+                              transaction_amount = "sum", 
+                              function(x)length(x))
+                            )
+
+# identify clusters
+gh_emails_networks <- clusters(as.undirected(gh_emails_graph))
+V(gh_emails_graph)$network <- gh_emails_networks$membership
+
+# extract vertices
+gh_emails_nodes_vert <- get.data.frame(gh_emails_graph, what="vertices")
+
+# create nodes with fields used by Visnetwork for plotting
+gh_emails_nodes <- data.frame(id = gh_emails_nodes_vert$name,
+                              title = gh_emails_nodes_vert$name, 
+                              group = gh_emails_nodes_vert$network)
+gh_emails_nodes <- gh_emails_nodes[order(gh_emails_nodes$id, decreasing = F),]
+
+# extract edges
+gh_emails_edges <- get.data.frame(gh_emails_graph, what="edges")[1:2]
+
+# remove data structures we no longer need
+rm(gh_committers_emails_graph, gh_emails_graph, gh_emails_networks, gh_emails_nodes_pre)
+
+gh_emails_nodes_is_google <- gh_emails_nodes %>%
+  select(id, group) %>%
+  rename(email=id) %>%
+  group_by(group) %>%
+  mutate(is_googler=any(str_detect(email, "google")))
+
+# join by committer email address with git log data to get the clusters
+gitlog_networks <- gitlog_commits %>% 
+  ungroup() %>%
+  inner_join(gh_emails_nodes_is_google %>% 
+               select(email, group, is_googler) %>% 
+               rename(committer_group=group, committer_is_googler=is_googler), 
+             by=c("committer_email"="email"))
+
+# join by author
+gitlog_networks <- gitlog_networks %>% 
+  ungroup() %>%
+  inner_join(gh_emails_nodes_is_google %>% 
+               select(email, group, is_googler) %>% 
+               rename(author_group=group, author_is_googler=is_googler), 
+             by=c("author_email"="email"))
+
+paste("identified", max(gitlog_networks$committer_group),"unique committers from", n_distinct(gh_emails$email),"emails")
+paste("identified", max(gitlog_networks$author_group),"unique authors from", n_distinct(gh_emails$email),"emails")
+
+# This will show false because we haven't identified bsed on groups yet
+gitlog_networks %>% 
+  ungroup() %>% 
+  filter(author_username=="keveman") %>% 
+  select(author_name, author_host, author_is_google, author_is_googler, author_group) %>% 
+  unique()
+  
+```
+
+
+```{r plot_network, fig.height=10, fig.width=10}
+
+# just plot Google people, otherwise this is too big
+gh_emails_nodes_google <- gh_emails_nodes %>% 
+  group_by(group) %>%
+  mutate(is_google=any(str_detect(id, "google"))) %>%
+  filter(is_google) %>%
+  select(-is_google)
+
+saveRDS(gh_emails_nodes_google, "data/tf_google_email_nodes.Rds")
+
+# filter out non-google emails
+gh_emails_edges_google <- gh_emails_edges %>% 
+  group_by(from) %>%
+  mutate(is_google=any(str_detect(to, "google") | str_detect(from, "google"))) %>%
+  filter(is_google) %>%
+  select(-is_google)
+  
+saveRDS(gh_emails_edges_google, "data/tf_google_email_edges.Rds")
+
+gh_emails_graph <- visNetwork(gh_emails_nodes_google, gh_emails_edges_google) %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE)
+
+gh_emails_graph
+```
+
+```{r export_graph}
+
+# Export for embedding into the blog entry
+# manually open HTML and save as in web browser
+
+graph_file <- paste0("gh_", params$git_repo, "_emails_graph.html")
+visSave(gh_emails_graph, graph_file, 
+        selfcontained = TRUE, background = "white")
+
+# visSave doesn't use relative paths
+system(paste0("mv ", graph_file, " data/gh_emails_graph" ))
+
+```
+
+# Committers
+
+```{r committers_dedup}
+
+# is any in network google
+
+gitlog_commits_is_google <- gitlog_networks %>%
+  mutate(
+    committer_domain_type=ifelse(committer_is_googler, "Google", committer_domain_type),
+    author_domain_type=ifelse(author_is_googler, "Google", author_domain_type)
+    )
+
+```
+
+```{r committers_per_month, fig.width=10, fig.height=10}
+
+committers_month_is_google_summary <- gitlog_commits_is_google %>%
+  ungroup() %>%
+  group_by(committer_group) %>%
+  arrange(desc(commit_month)) %>% # arrange by most recent commit
+  mutate(
+    committer = first(committer_name),
+    committer_email = first(committer_email),
+    committer_type=ifelse(committer_email=="noreply@github.com", "Github", 
+                               ifelse(any(committer_domain_type=="Google"), "Google", 
+                                      "Not Google")) # are any of the committers' email addresses Google?
+  ) %>% 
+  ungroup() %>%
+  group_by(commit_month) %>%
+  mutate(total_committers=n_distinct(committer_group)) %>% # total number unique committers each month
+  group_by(commit_month, committer_type) %>%
+  summarise(num_committers=n_distinct(committer_group),
+         pct_committers=round(num_committers/first(total_committers),4)) %>%
+  mutate(commit_year=year(commit_month))
+
+saveRDS(committers_month_is_google_summary, "data/tf_committer_diversity.Rds")
+
+ggplot(committers_month_is_google_summary, 
+       aes(x=commit_month, y=pct_committers)) +
+  geom_bar(aes(fill=committer_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Committer", y="Commits", title="Tensorflow") +
+  guides(fill=guide_legend(title="Google?")) +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  facet_wrap(~ commit_year, scales="free")
+
+```
+
+```{r commits_per_month, fig.width=10, fig.height=10}
+
+commits_month_is_google <- gitlog_commits_is_google %>%
+  ungroup() %>%
+  group_by(commit_month) %>%
+  mutate(total_commits=n()) %>% # total number of commits made each month
+  ungroup() %>%
+  group_by(committer_group) %>%
+  arrange(desc(commit_month)) %>% # arrange by most recent commit
+  mutate(
+    committer = first(committer_name),
+    committer_email = first(committer_email),
+    committer_type=ifelse(committer_email=="noreply@github.com", "Github", 
+                               ifelse(any(committer_domain_type=="Google"), "Google", 
+                                      "Not Google")) # are any of the committers' email addresses Google?
+  ) %>% 
+  group_by(commit_month, committer_group) %>%
+  mutate(num_commits=n()) %>%
+  ungroup() %>%
+  select(commit_month, committer_group, committer_name, committer_email, committer_type, num_commits, total_commits) %>%
+  unique()
+
+commits_month_is_google_summary <- commits_month_is_google %>%
+  group_by(commit_month, committer_type) %>%
+  summarise(num_commits=sum(num_commits),
+            pct_commits=round(num_commits/first(total_commits), 4)) %>%
+  mutate(commit_year=year(commit_month))
+
+saveRDS(commits_month_is_google_summary, "data/tf_commit_diversity.Rds")
+
+ggplot(commits_month_is_google_summary, 
+       aes(x=commit_month, y=pct_commits)) +
+  geom_bar(aes(fill=committer_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Committer", y="Commits", title="Tensorflow") +
+  guides(fill=guide_legend(title="Google?")) +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  facet_wrap(~ commit_year, scales="free")
+
+```
+
+

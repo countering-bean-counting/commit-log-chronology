@@ -1,0 +1,327 @@
+---
+title: "Applying a Network to Tensorflow Commit Emails"
+author: "Augustina Ragwitz"
+date: "February 26, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r includes, message = FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(igraph)
+library(lubridate)
+library(scales)
+library(stringr)
+library(tidyr)
+library(visNetwork)
+```
+
+# Overview
+
+Does this buy us anything?
+
+
+```{r gitlog_commits}
+# taken from tensorflow_authors.Rmd
+
+gitlog_commits <- readRDS("data/gitlog_commits.Rds")
+
+```
+
+```{r committers_lookup}
+gh_committers_by_email <- gitlog_commits %>%
+  rename(name=committer_name, email=committer_email) %>%
+  arrange(desc(commit_date)) %>%
+  group_by(email, name) %>%
+  summarise(last_commit=max(commit_date)) %>%
+  arrange(desc(last_commit)) 
+
+gh_committers_join1 <- gh_committers_by_email %>%
+  inner_join(gh_committers_by_email %>% select(name, email) %>% rename(name2=name), "email") %>%
+  unique()
+
+gh_committers_join <- gh_committers_join1 %>%
+  inner_join(gh_committers_join1 %>% select(name, email) %>% rename(email2=email), "name") %>%
+  unique()
+
+rm(gh_committers_join1)
+
+```
+
+```{r authors_lookup}
+
+# group commits by email address and name
+gh_authors_by_email <- gitlog_commits %>%
+  rename(name=author_name, email=author_email) %>%
+  arrange(desc(commit_date)) %>%
+  group_by(email, name) %>%
+  summarise(num_commits = n(), 
+            last_commit=max(commit_date)) %>%
+  arrange(desc(last_commit))
+
+# join on name to show emails tied to the same names
+gh_authors_join1 <- gh_authors_by_email %>%
+  inner_join(gh_authors_by_email %>% select(name, email) %>% rename(name2=name), "email") %>%
+  unique()
+
+# join on email to show names tied to the same emails
+gh_authors_join <- gh_authors_join1 %>%
+  inner_join(gh_authors_join1 %>% select(name, email) %>% rename(email2=email), "name") %>%
+  unique()
+
+rm(gh_authors_join1)
+
+```
+
+```{r join_emails}
+gh_emails <- bind_rows(gh_authors_join %>% select(email, email2), gh_committers_join %>% select(email, email2))
+gh_emails <- gh_emails %>% unique()
+
+gh_emails %>% filter(str_detect(email, "keveman"))
+```
+
+
+```{r emails_graph, warning=FALSE}
+
+# this might need to be directed in the future based on commit dates
+gh_emails_graph_big <- graph_from_data_frame(gh_emails,
+                                             directed=FALSE,
+                                             vertices=unique(gh_emails$email2))
+
+E(gh_emails_graph_big)$weight <- 1
+gh_emails_graph <- simplify(gh_emails_graph_big, 
+                            edge.attr.comb=list(
+                              weight = "sum", 
+                              transaction_amount = "sum", 
+                              function(x)length(x))
+                            )
+
+# identify clusters
+gh_emails_networks <- clusters(as.undirected(gh_emails_graph))
+V(gh_emails_graph)$network <- gh_emails_networks$membership
+
+# extract vertices
+gh_emails_nodes_vert <- get.data.frame(gh_emails_graph, what="vertices")
+
+# create nodes with fields used by Visnetwork for plotting
+gh_emails_nodes <- data.frame(id = gh_emails_nodes_vert$name,
+                              title = gh_emails_nodes_vert$name, 
+                              group = gh_emails_nodes_vert$network)
+gh_emails_nodes <- gh_emails_nodes[order(gh_emails_nodes$id, decreasing = F),]
+
+# extract edges
+gh_emails_edges <- get.data.frame(gh_emails_graph, what="edges")[1:2]
+
+# remove data structures we no longer need
+rm(gh_committers_emails_graph, gh_emails_graph, gh_emails_networks, gh_emails_nodes_pre)
+
+gh_emails_nodes_is_google <- gh_emails_nodes %>%
+  select(id, group) %>%
+  rename(email=id) %>%
+  group_by(group) %>%
+  mutate(is_googler=any(str_detect(email, "google")))
+
+# join by committer email address with git log data to get the clusters
+gitlog_networks <- gitlog_commits %>% 
+  ungroup() %>%
+  inner_join(gh_emails_nodes_is_google %>% 
+               select(email, group, is_googler) %>% 
+               rename(committer_group=group, committer_is_googler=is_googler), 
+             by=c("committer_email"="email"))
+
+# join by author
+gitlog_networks <- gitlog_networks %>% 
+  ungroup() %>%
+  inner_join(gh_emails_nodes_is_google %>% 
+               select(email, group, is_googler) %>% 
+               rename(author_group=group, author_is_googler=is_googler), 
+             by=c("author_email"="email"))
+
+paste("identified", max(gitlog_networks$committer_group),"unique committers from", n_distinct(gh_emails$email),"emails")
+paste("identified", max(gitlog_networks$author_group),"unique authors from", n_distinct(gh_emails$email),"emails")
+
+# This will show false because we haven't identified bsed on groups yet
+gitlog_networks %>% 
+  ungroup() %>% 
+  filter(author_username=="keveman") %>% 
+  select(author_name, author_host, author_is_google, author_is_googler, author_group) %>% 
+  unique()
+  
+```
+
+
+```{r plot_network, fig.height=10, fig.width=10}
+
+# just plot Google people, otherwise this is too big
+gh_emails_nodes_google <- gh_emails_nodes %>% 
+  group_by(group) %>%
+  mutate(is_google=any(str_detect(id, "google"))) %>%
+  filter(is_google) %>%
+  select(-is_google)
+
+saveRDS(gh_emails_nodes_google, "data/tf_google_email_nodes.Rds")
+
+# filter out non-google emails
+gh_emails_edges_google <- gh_emails_edges %>% 
+  group_by(from) %>%
+  mutate(is_google=any(str_detect(to, "google") | str_detect(from, "google"))) %>%
+  filter(is_google) %>%
+  select(-is_google)
+  
+saveRDS(gh_emails_edges_google, "data/tf_google_email_edges.Rds")
+
+gh_emails_graph <- visNetwork(gh_emails_nodes_google, gh_emails_edges_google) %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE)
+
+gh_emails_graph
+```
+```{r export_graph}
+
+# Export for embedding into the blog entry
+# manually open HTML and save as in web browser
+visSave(gh_emails_graph, "gh_emails_graph.html", 
+        selfcontained = TRUE, background = "white")
+
+# visSave doesn't use relative paths
+system("mv gh_emails_graph.html data/gh_emails_graph")
+
+```
+
+
+# Number of Committers
+
+```{r committers_dedup}
+
+# is any in network google
+
+gitlog_commits_is_google <- gitlog_networks %>%
+  mutate(
+    committer_domain_type=ifelse(committer_is_googler, "Google", committer_domain_type),
+    author_domain_type=ifelse(author_is_googler, "Google", author_domain_type)
+    )
+
+```
+
+```{r num_committers, fig.height=10, fig.width=10}
+committer_summary <- gitlog_commits_is_google %>%
+  group_by(committer_domain) %>%
+  mutate(num_committers=n_distinct(committer_group)) %>%
+  ungroup() %>%
+  group_by(committer_domain, committer_domain_type) %>%
+  summarise(num_committers_type = n_distinct(committer_group),
+            num_committers = first(num_committers)) %>%
+  ungroup()
+
+saveRDS(committer_summary, "data/tf_committer_summary_network.Rds")
+
+ggplot(committer_summary %>% top_n(15, num_committers), 
+       aes(x=reorder(committer_domain, num_committers), y=num_committers_type)) +
+  geom_bar(aes(fill=committer_domain_type), stat="identity", position="dodge") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="committer Email Domain", y="committers", title="Tensorflow - Top Total committers by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(committer_summary %>% filter(committer_domain_type == "Other") %>% top_n(5, num_committers), 
+       aes(x=reorder(committer_domain, num_committers), y=num_committers_type)) +
+  geom_bar(aes(fill=committer_domain_type), stat="identity", show.legend = FALSE) +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="Committer Email Domain", y="committers", title="Tensorflow - Top 5 Total committers by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+```
+## By Month
+
+```{r committers_by_month}
+
+committers_month <- gitlog_commits_is_google %>%
+  group_by(commit_month, committer_domain) %>%
+  mutate(num_committers=n_distinct(committer_group)) %>%
+  ungroup() %>%
+  group_by(commit_month, committer_domain, committer_domain_type) %>%
+  summarise(num_committers_type=n_distinct(committer_group),
+            num_committers=first(num_committers)) %>%
+  ungroup()
+
+# This is used by a blog entry - TODO (link)
+saveRDS(committers_month, "data/committer_month_network.Rds")
+
+```
+
+```{r num_committers_month, fig.height=10, fig.width=10}
+
+ggplot(committers_month, 
+       aes(x=commit_month, y=num_committers_type)) +
+  geom_bar(aes(fill=committer_domain_type), position="dodge", stat="identity") +
+  theme_few() +
+  labs(x="Commit Month", y="Committers", title="Tensorflow - Committers per Month") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+```
+
+# Number of Authors
+
+
+```{r num_authors, fig.height=10, fig.width=10}
+author_summary <- gitlog_commits_is_google %>%
+  ungroup() %>%
+  mutate(total_authors = n_distinct(author_email)) %>%
+  group_by(author_domain) %>%
+  mutate(num_authors=n_distinct(author_group)) %>%
+  ungroup() %>%
+  group_by(author_domain, author_domain_type) %>%
+  summarise(num_authors_type = n_distinct(author_group),
+            num_authors = first(num_authors),
+            pct_authors = round(num_authors_type/first(total_authors), 2)) %>%
+  ungroup()
+
+saveRDS(author_summary, "data/tf_author_summary_network.Rds")
+
+ggplot(author_summary %>% top_n(20, num_authors), 
+       aes(x=reorder(author_domain, num_authors), y=num_authors_type)) +
+  geom_bar(aes(fill=author_domain_type), stat="identity", position="dodge") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="author Email Domain", y="authors", title="Tensorflow - Total authors by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+ggplot(author_summary %>% filter(author_domain_type == "Other") %>% top_n(10, num_authors), 
+       aes(x=reorder(author_domain, num_authors), y=num_authors_type)) +
+  geom_bar(aes(fill=author_domain_type), stat="identity") +
+  coord_flip() +
+  theme_few() +
+  scale_y_continuous(breaks=pretty_breaks()) +
+  labs(x="author Email Domain", y="authors", title="Tensorflow - Top 10 Total authors by Company") +
+  guides(fill=guide_legend(title="Domain Type"))
+
+```
+
+## By Month
+
+```{r commiters_by_month}
+
+authors_month <- gitlog_commits_is_google %>%
+  group_by(commit_month) %>%
+  mutate(num_authors=n_distinct(author_group)) %>%
+  group_by(commit_month, author_domain_type) %>%
+  summarise(num_authors_type=n_distinct(author_group),
+            num_authors=first(num_authors))
+
+```
+
+
+# Gains?
+
+Was the added complexity worth it?
+
+TODO...
