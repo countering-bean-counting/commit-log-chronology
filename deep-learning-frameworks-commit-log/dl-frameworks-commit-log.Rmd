@@ -13,6 +13,7 @@ library(dplyr)
 library(ggplot2)
 library(ggthemes)
 library(here)
+library(httr)
 library(igraph)
 library(lubridate)
 library(readr)
@@ -126,7 +127,7 @@ saveRDS(gitlog_raw, "dl-frameworks-commit-log_gitlog_raw.Rds")
 gitlog_raw <- readRDS("dl-frameworks-commit-log_gitlog_raw.Rds")
 
 # fix names and emails to be all lowercase
-gitlog_commits_dates <- gitlog_raw %>% 
+gitlog_commits_dates <- gitlog_raw %>%
   mutate(
          author_date=as.Date(author_date, tz="UTC"),
          committer_date=as.Date(committer_date, tz="UTC")
@@ -144,22 +145,6 @@ gitlog_commits_dates <- gitlog_raw %>%
 
 ## Extract Email Domains
 
-```{r email_providers}
-# these will be labeled as "Personal"
-email_providers <- c("126",
-                     "163",
-                     "github",
-                     "gmail",
-                     "googlemail",
-                     "hotmail",
-                     "live",
-                     "me",
-                     "naver",
-                     "outlook",
-                     "qq",
-                     "yahoo")
-```
-
 ```{r gitlog_email_domains, eval=FALSE}
 
 gitlog_commits <- gitlog_commits_dates %>% 
@@ -174,20 +159,8 @@ gitlog_commits <- gitlog_commits_dates %>%
   mutate(
     author_domain = suffix_extract(author_host)$domain,
     author_suffix = suffix_extract(author_host)$suffix,
-    author_is_edu = str_detect(author_suffix, "edu") | str_detect(author_suffix, "ac."),
     committer_domain = suffix_extract(committer_host)$domain,
     committer_suffix = suffix_extract(committer_host)$suffix,
-    committer_is_edu = str_detect(committer_suffix, "edu") | str_detect(committer_suffix, "ac."),
-    author_hosted_email = author_domain %in% email_providers,
-    committer_is_github = committer_domain == "github",
-    committer_hosted_email = !committer_is_github & committer_domain %in% email_providers,
-    author_domain_type = ifelse(author_hosted_email, "Personal",
-                                ifelse(author_is_edu, "Edu", "Other")),
-    author_domain_type=ifelse(is.na(author_domain), "Local", author_domain_type),
-    committer_domain_type = ifelse(committer_is_github, "Github", 
-                                   ifelse(committer_hosted_email, "Personal",
-                                          ifelse(committer_is_edu, "Edu", "Other"))),
-    committer_domain_type=ifelse(is.na(committer_domain), "Local", committer_domain_type)
     )
 
 ```
@@ -315,24 +288,85 @@ stock <- stockSymbols(exchange = c("AMEX", "NASDAQ", "NYSE"), sort.by = c("Excha
 saveRDS(stock, "stocks.RDS")
 ```
 
+```{r add_new_repo, warning=FALSE, eval=FALSE}
 
-```{r identify_big_orgs, message=FALSE, warning=FALSE, eval=FALSE}
+# run repo etc above, rebuild network
+gitlog_networks <- readRDS("dl-frameworks_network.Rds")
+
+# make the domain list
+gitlog_networks_domains <- bind_rows(gitlog_networks %>% 
+                                       select(committer_host, committer_domain) %>% 
+                                       rename(host=committer_host, domain=committer_domain), 
+                                     gitlog_networks %>% 
+                                       select(author_host, author_domain) %>%
+                                       rename(host=author_host, domain=author_domain)
+                                     ) %>% unique()
+
+gitlog_networks_domains <- gitlog_networks_domains %>% 
+  group_by(domain) %>% 
+  summarise(host=first(host))
+
+# check which ones we already have
+
+# current clean list
+clearbit <- readRDS("dl-frameworks_domain_info_clean.Rds")
+
+# find ones we don't have
+
+# clearbit_unidentified <- gitlog_networks_domains %>%
+#   anti_join(clearbit, by=c("host"="host_looked_up"))
+
+clearbit <- read_rds("dl-frameworks_domain_info.Rds")
+clearbit_unidentified <- clearbit %>% filter(error.type=="queued") %>% select(host_looked_up)
+
+# hit up clearbit for the domains we haven't tried to identify already
+
+clearbit_new <- data_frame()
+for (n in 1:nrow(clearbit_unidentified)) {
+  paste(clearbit_unidentified$host[n])
+  clearbit_url <- paste0("https://company.clearbit.com/v2/companies/find?domain=", clearbit_unidentified$host[n])
+  clearbit_get <- GET(clearbit_url, add_headers(Authorization = clearbit_auth))
+  if (clearbit_get$status_code == 422) {
+    next()
+  }
+  clearbit_json <- fromJSON(content(clearbit_get, as = "text"), flatten=TRUE)
+  clearbit_json$domainAliases = paste(clearbit_json$domainAliases, collapse=",")
+  clearbit_json$tags = paste(clearbit_json$tags, collapse=",")
+  clearbit_df <-  clearbit_json %>% unlist() %>% as.data.frame.list()
+  
+  clearbit_df <- clearbit_df %>% 
+    mutate(row=n, 
+           host_looked_up=clearbit_unidentified$host[n])
+  
+  write_rds(clearbit_df, paste0("domain_info/clearbit_df_", clearbit_unidentified$domain[n],".Rds"))
+  clearbit_new <- bind_rows(clearbit_new, clearbit_df)
+}
+
+clearbit <- bind_rows(clearbit_new, clearbit)
+saveRDS(clearbit, "dl-frameworks_domain_info.Rds")
+
+```
+
+
+
+```{r identify_big_orgs, warning=FALSE, eval=FALSE}
 gitlog_networks <- readRDS("dl-frameworks_network.Rds")
 
 # TODO DO NOT COMMIT
 clearbit_auth <- paste("Bearer", "")
 
+# make a list of domains
 gitlog_networks_domains <- bind_rows(gitlog_networks %>% 
-                                       filter(committer_domain_type == "Other") %>% 
                                        select(committer_host, committer_domain) %>% 
                                        rename(host=committer_host, domain=committer_domain), 
                                      gitlog_networks %>% 
-                                       filter(author_domain_type == "Other") %>% 
                                        select(author_host, author_domain) %>%
                                        rename(host=author_host, domain=author_domain)
                                      ) %>% unique()
 
-gitlog_networks_domains <- gitlog_networks_domains %>% group_by(domain) %>% summarise(host=first(host))
+gitlog_networks_domains <- gitlog_networks_domains %>% 
+  group_by(domain) %>% 
+  summarise(host=first(host))
 
 clearbit <- data_frame()
 for (n in 1:nrow(gitlog_networks_domains)) {
@@ -367,20 +401,45 @@ stocks <- read_rds("stocks.Rds")
 # which companies have ticker symbols that got missed by Clearbit
 
 clearbit_stocks <- clearbit %>%
-  left_join(stocks, by=c("legalName"="Name"))
+  select(id, name, legalName, domain, domainAliases, 
+         category.sector, category.industryGroup, category.subIndustry, category.naicsCode, category.sicCode,
+         location, emailProvider, 
+         metrics.alexaUsRank, metrics.alexaGlobalRank, metrics.employees, metrics.annualRevenue,
+         row, host_looked_up, ticker, type, foundedYear) %>%
+  left_join(stocks %>% select(Name, Symbol, Sector, Industry), by=c("legalName"="Name"))
 
 knitr::kable(clearbit_stocks %>% 
-  filter(!is.na(name) & type !="public" & !is.na(Symbol)) %>% 
-  select(name, Symbol, ticker, type, legalName), 
+  filter(!is.na(legalName) & type !="public" & !is.na(Symbol)) %>% 
+  select(legalName, Symbol, ticker, type), 
   format="pandoc", padding = 2,
   format.args = list(border = "1"),
   caption="Public Companies Mis-typed by Clearbit")
 
+knitr::kable(clearbit_stocks %>% 
+  filter(Symbol != ticker | (is.na(ticker) & !is.na(Symbol))) %>% 
+  select(legalName, Symbol, ticker, type), 
+  format="pandoc", padding = 2,
+  format.args = list(border = "1"),
+  caption="Public Companies Mis-typed by Clearbit")
+
+# if clearbit didn't identify a ticker but we found one in stocks, update ticker
 clearbit_stocks <- clearbit_stocks %>%
   mutate(
-    ticker=ifelse(!is.na(name) & type !="public" & !is.na(Symbol), Symbol, ticker),
+    ticker=ifelse(!is.na(legalName) & type !="public" & !is.na(Symbol), Symbol, ticker),
     type=ifelse(!is.na(ticker), "public", type)
-  )
+  ) %>% # consolidate multiple exchanges
+  select(-Symbol) %>%
+  unique()
+
+# fix numerics that are chars
+
+clearbit_stocks <- clearbit_stocks %>%
+  mutate(
+    metrics.alexaUsRank = as.numeric(as.character(metrics.alexaUsRank)),
+    metrics.alexaGlobalRank = as.numeric(as.character(metrics.alexaGlobalRank)),
+    metrics.employees = as.numeric(as.character(metrics.employees)),
+    metrics.annualRevenue = as.numeric(as.character(metrics.annualRevenue))
+    )
 
 write_rds(clearbit_stocks, "dl-frameworks_domain_info_clean.Rds")
 ```
@@ -392,7 +451,7 @@ gitlog_networks <- readRDS("dl-frameworks_network.Rds")
 
 domain_company_type <- clearbit %>% 
   filter(! is.na(id)) %>% 
-  select(domain, type, name) %>%
+  select(domain, type, name, metrics.employees) %>%
   rename(host=domain, company_type=type, company_name=name) %>%
   mutate(domain=suffix_extract(host)$domain)
 
@@ -400,14 +459,20 @@ domain_company_type <- clearbit %>%
 gitlog_networks_org <- gitlog_networks %>% 
   left_join(domain_company_type %>% 
               select(-host) %>%
-              rename(committer_domain=domain, committer_company_name=company_name, committer_company_type=company_type)) %>%
+              rename(committer_domain=domain, 
+                     committer_company_name=company_name, 
+                     committer_company_type=company_type, 
+                     committer_company_employees=metrics.employees)) %>%
   unique()
 
 # join by author email 
 gitlog_networks_org <- gitlog_networks_org %>% 
   left_join(domain_company_type %>% 
               select(-host) %>%
-              rename(author_domain=domain, author_company_name=company_name, author_company_type=company_type)) %>%
+              rename(author_domain=domain, 
+                     author_company_name=company_name, 
+                     author_company_type=company_type,
+                     author_company_employees=metrics.employees)) %>%
   unique()
 
 
@@ -415,44 +480,25 @@ saveRDS(gitlog_networks_org, "dl-frameworks-commit-log_domain_info.Rds")
 
 ```
 
-```{r committer_company_summary, fig.height=10, fig.width=10}
-
-gitlog_networks_org <-readRDS("dl-frameworks-commit-log_domain_info.Rds")
-
-committer_company_type_summary <- gitlog_networks_org %>%
-  group_by(repo_short) %>%
-  mutate(total_committers=n_distinct(committer_group)) %>%
-  group_by(committer_group) %>%
-  arrange(commit_date) %>%
-  mutate(latest_email = committer_email[which.max(commit_date)],
-         committer_latest_company_type=committer_company_type[which.max(commit_date)]) %>%
-  group_by(repo_short, committer_latest_company_type) %>%
-  summarise(num_committers=n_distinct(committer_group),
-            pct_committers=round(num_committers/first(total_committers), 2))
-
-ggplot(committer_company_type_summary, aes(x=repo_short, y=pct_committers)) +
-  geom_bar(aes(fill=committer_latest_company_type), stat="identity", position="dodge") +
-  coord_flip() +
-  theme_few()
-
-```
-
-
 ```{r author_company_summary, fig.height=10, fig.width=12}
 
 gitlog_networks_org <-readRDS("dl-frameworks-commit-log_domain_info.Rds")
 gitlog_networks_feb <- gitlog_networks_org %>% filter(commit_month > "2017-12-01" & commit_month < "2018-03-01")
+saveRDS(gitlog_networks_feb, "dl-frameworks-network-public-companies_Feb2018.Rds")
 
 author_company_type_summary <- gitlog_networks_feb %>%
+  ungroup() %>%
   group_by(repo_short) %>%
   mutate(total_authors=n_distinct(author_group)) %>%
   group_by(author_group) %>%
   mutate(latest_email = author_email[which.max(commit_date)],
          author_latest_company=author_company_name[which.max(commit_date)],
-         author_latest_company_type=author_company_type[which.max(commit_date)]) %>%
+         author_latest_company_type=author_company_type[which.max(commit_date)],
+         author_latest_company_employees=author_company_employees[which.max(commit_date)]) %>%
   group_by(repo_short, author_latest_company_type) %>%
   summarise(num_authors=n_distinct(author_group),
-            pct_authors=round(num_authors/first(total_authors), 2))
+            pct_authors=round(num_authors/first(total_authors), 2),
+            author_company_employees=first(author_company_employees))
 
 author_company_summary <- gitlog_networks_feb %>%
   group_by(repo_short, commit_month) %>%
@@ -460,154 +506,62 @@ author_company_summary <- gitlog_networks_feb %>%
   group_by(author_group) %>%
   mutate(latest_email = author_email[which.max(commit_date)],
          author_latest_company=author_company_name[which.max(commit_date)],
-         author_latest_company_type=author_company_type[which.max(commit_date)]) %>%
+         author_latest_company_type=author_company_type[which.max(commit_date)],
+         author_latest_company_employees=author_company_employees[which.max(commit_date)]) %>%
   group_by(commit_month, repo_short, author_latest_company) %>%
   summarise(num_authors=n_distinct(author_group),
             pct_authors=round(num_authors/first(total_authors), 2),
-            author_latest_company_type=first(author_latest_company_type))
+            author_latest_company_type=first(author_latest_company_type),
+            author_company_employees=first(author_company_employees))
 
-ggplot(author_company_summary, aes(x=repo_short, y=pct_authors)) +
+
+
+```
+
+```{r fig-company-types-na, fig.height=12, fig.width=10}
+
+ggplot(author_company_type_summary, aes(x=repo_short, y=pct_authors)) +
   geom_bar(aes(fill=author_latest_company_type), stat="identity", position="dodge") +
-  coord_flip()
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Authors (%)", title="Authors per Company Type - 2018 Jan + Feb") +
+  guides(fill=guide_legend(title="Company Type"))
+```
 
+```{r fig-company-types, fig.height=12, fig.width=10}
 ggplot(author_company_type_summary %>% filter(!is.na(author_latest_company_type)), 
        aes(x=repo_short, y=pct_authors)) +
   geom_bar(aes(fill=author_latest_company_type), stat="identity", position="dodge") +
-  coord_flip()
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Authors (%)", title="Authors per Company Type - 2018 Jan + Feb") +
+  guides(fill=guide_legend(title="Company Type"))
+```
+
+```{r fig-companies, fig.height=12, fig.width=12}
+ggplot(author_company_summary %>% 
+         filter(author_latest_company_type %in% c("public", "private") & author_company_employees > 1), 
+       aes(x=repo_short, y=pct_authors)) +
+  geom_bar(aes(fill=author_latest_company), stat="identity", position="dodge") +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Authors (%)", title="Authors per Company - 2018 Jan + Feb") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  facet_wrap(~ commit_month)
 
 ggplot(author_company_summary %>% 
          filter(author_latest_company_type %in% c("public")), 
        aes(x=repo_short, y=pct_authors)) +
   geom_bar(aes(fill=author_latest_company), stat="identity", position="dodge") +
-  coord_flip() +
-  facet_wrap(~ commit_month, scales="free")
-
-saveRDS(gitlog_networks_feb, "dl-frameworks-network-public-companies_Feb2018.Rds")
-
-```
-
-
-# Committer Summary
-
-```{r num_committers, fig.height=12, fig.width=10}
-
-gitlog_networks_feb <- readRDS("dl-frameworks-network-public-companies_Feb2018.Rds")
-
-committer_summary <- gitlog_networks_feb %>%
-  ungroup() %>%
-  group_by(repo_short) %>%
-  mutate(total_committers = n_distinct(committer_group)) %>%
-  group_by(repo_short, committer_company_type) %>%
-  mutate(total_committers_org = n_distinct(committer_group),
-         pct_committers_org = round(total_committers_org/total_committers, 2)) %>%
-  group_by(repo_short, committer_company_type) %>%
-  summarise(num_committers=n_distinct(committer_group),
-         pct_committers=round(num_committers/first(total_committers), 2),
-         total_committers_org = first(total_committers_org),
-         pct_committers_org = first(pct_committers_org))
-
-# saveRDS(committer_summary, "data/tf_committer_summary_network.Rds")
-
-ggplot(committer_summary, 
-       aes(x=repo_short, y=pct_committers_org)) +
-  geom_bar(aes(fill=committer_company_type), stat="identity", position="dodge") +
+  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
   coord_flip() +
   theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Company (Email Domain Lookup)", y="Committers", title="Top Committers by Public Company") +
-  guides(fill=guide_legend(title="Company"))
-ggsave("top_companies_public.png")
-
-ggplot(committer_summary %>% filter(committer_domain_type %in% c("Other")) %>% filter(pct_committers > 0), 
-       aes(x=reorder(committer_domain, num_committers), y=pct_committers)) +
-  geom_bar(aes(fill=repo_short), stat="identity") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Email Domain", y="Committers", title="Top Committers by Company") +
-  guides(fill=guide_legend(title="Repo"))
-
-```
-
-
-
-
-```{r num_committers_monthly, fig.height=12, fig.width=10}
-committer_summary_month <- gitlog_networks %>%
-  filter(commit_month == "2018-02-01") %>%
-  ungroup() %>%
-  group_by(repo_short) %>%
-  mutate(total_committers = n_distinct(committer_group)) %>%
-  group_by(repo_short, committer_domain_type) %>%
-  mutate(total_committers_type = n_distinct(committer_group),
-         pct_committers_type = round(total_committers_type/total_committers, 2)) %>%
-  group_by(repo_short, committer_domain) %>%
-  summarise(num_committers=n_distinct(committer_group),
-         pct_committers=round(num_committers/first(total_committers), 2),
-         committer_domain_type = first(committer_domain_type),
-         total_committers_type = first(total_committers_type),
-         pct_committers_type = first(pct_committers_type))
-
-# saveRDS(committer_summary, "data/tf_committer_summary_network.Rds")
-
-ggplot(committer_summary_month, 
-       aes(x=repo_short, y=pct_committers_type)) +
-  geom_bar(aes(fill=committer_domain_type), stat="identity", position="dodge") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Email Domain Type", y="Committers", title="Top Committers by Domain Type - Feb 2018") +
-  guides(fill=guide_legend(title="Domain Type"))
-ggsave("top_domain_types_feb.png")
-
-ggplot(committer_summary_month %>% filter(committer_domain_type %in% c("Other")) %>% filter(pct_committers > 0), 
-       aes(x=reorder(committer_domain, num_committers), y=pct_committers)) +
-  geom_bar(aes(fill=repo_short), stat="identity") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Email Domain", y="Committers", title="Top Committers by Company - Feb 2018") +
-  guides(fill=guide_legend(title="Repo"))
-
-```
-
-```{r num_committers_qtly, fig.height=12, fig.width=10}
-committer_summary_qtr <- gitlog_networks %>%
-  filter(commit_quarter == "2018-01-01") %>%
-  ungroup() %>%
-  group_by(repo_short) %>%
-  mutate(total_committers = n_distinct(committer_group)) %>%
-  group_by(repo_short, committer_domain_type) %>%
-  mutate(total_committers_type = n_distinct(committer_group),
-         pct_committers_type = round(total_committers_type/total_committers, 2)) %>%
-  group_by(repo_short, committer_domain) %>%
-  summarise(num_committers=n_distinct(committer_group),
-         pct_committers=round(num_committers/first(total_committers), 2),
-         committer_domain_type = first(committer_domain_type),
-         total_committers_type = first(total_committers_type),
-         pct_committers_type = first(pct_committers_type))
-
-# saveRDS(committer_summary, "data/tf_committer_summary_network.Rds")
-
-ggplot(committer_summary_qtr, 
-       aes(x=repo_short, y=pct_committers_type)) +
-  geom_bar(aes(fill=committer_domain_type), stat="identity", position="dodge") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Email Domain Type", y="Committers", title="Top Committers by Domain Type - 1st Quarter, 2018") +
-  guides(fill=guide_legend(title="Domain Type"))
-ggsave("top_domain_types_qtr.png")
-
-ggplot(committer_summary_qtr %>% filter(committer_domain_type %in% c("Other")) %>% filter(pct_committers > 0), 
-       aes(x=reorder(committer_domain, num_committers), y=pct_committers)) +
-  geom_bar(aes(fill=repo_short), stat="identity") +
-  coord_flip() +
-  theme_few() +
-  scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
-  labs(x="Committer Email Domain", y="Committers", title="Top Committers by Company - 1st Quarter, 2018") +
-  guides(fill=guide_legend(title="Repo"))
-
+  labs(x="Repository", y="Authors (%)", title="Authors per Company (Public) - 2018 Jan + Feb") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  facet_wrap(~ commit_month)
 ```
 
 
