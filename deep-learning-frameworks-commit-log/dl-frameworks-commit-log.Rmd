@@ -535,6 +535,7 @@ gitlog_networks_org <- gitlog_networks_org %>%
                      author_company_employees=metrics.employees))
 
 
+# TODO if NA, check the unroll/domain names lookup
 
 saveRDS(gitlog_networks_org, "dl-frameworks-commit-log_domain_info.Rds")
 
@@ -550,11 +551,12 @@ gitlog_networks_org <-readRDS("dl-frameworks-commit-log_domain_info.Rds")
 gitlog_networks_feb <- gitlog_networks_org %>% 
   filter(commit_month > "2017-12-01" & commit_month < "2018-03-01") %>%
   group_by(author_group) %>%
-  mutate(latest_email = author_email[which.max(commit_date)],
-         author_latest_company=author_company_name[which.max(commit_date)],
-         author_latest_company_type=author_company_type[which.max(commit_date)],
-         author_latest_company_employees=author_company_employees[which.max(commit_date)])
-         #author_latest_company_type = ifelse(is.na(author_latest_company_type), "No Domain Info", author_latest_company_type)) 
+  mutate(author_best_email = ifelse(any(author_company_type %in% c("public", "education", "private")),
+           author_email[which(author_company_type %in% c("public", "education", "private"))],
+           author_email[which.max(commit_date)]),
+         author_best_company=author_company_name[first(which(author_email==author_best_email))],
+         author_best_company_type=author_company_type[first(which(author_email==author_best_email))],
+         author_best_company_employees=author_company_employees[first(which(author_email==author_best_email))])
 
 saveRDS(gitlog_networks_feb, "dl-frameworks-network-public-companies_Feb2018.Rds")
 
@@ -562,7 +564,7 @@ author_company_type_summary <- gitlog_networks_feb %>%
   ungroup() %>%
   group_by(repo_short) %>%
   mutate(total_authors=n_distinct(author_group)) %>%
-  group_by(repo_short, author_latest_company_type) %>%
+  group_by(repo_short, author_best_company_type) %>%
   summarise(num_authors=n_distinct(author_group),
             pct_authors=round(num_authors/first(total_authors), 2),
             author_company_employees=first(author_company_employees))
@@ -570,17 +572,17 @@ author_company_type_summary <- gitlog_networks_feb %>%
 author_company_summary <- gitlog_networks_feb %>%
   group_by(repo_short, commit_month) %>%
   mutate(total_authors=n_distinct(author_group)) %>%
-  group_by(commit_month, repo_short, author_latest_company) %>%
+  group_by(commit_month, repo_short, author_best_company) %>%
   summarise(num_authors=n_distinct(author_group),
             pct_authors=round(num_authors/first(total_authors), 2),
-            author_latest_company_type=first(author_latest_company_type),
+            author_best_company_type=first(author_best_company_type),
             author_company_employees=first(author_company_employees))
 
 author_company_summary_has_commit <- gitlog_networks_feb %>%
-  group_by(commit_month, repo_short, author_latest_company) %>%
+  group_by(commit_month, repo_short, author_best_company) %>%
   summarise(has_commit = TRUE, 
-            author_company_employees=first(author_latest_company_employees),
-            author_latest_company_type = first(author_latest_company_type)
+            author_company_employees=first(author_best_company_employees),
+            author_best_company_type = first(author_best_company_type)
             )
 
 ```
@@ -592,7 +594,7 @@ author_company_summary_has_commit <- gitlog_networks_feb %>%
 ```{r fig-company-types-na, fig.height=12, fig.width=10}
 
 ggplot(author_company_type_summary, aes(x=repo_short, y=pct_authors)) +
-  geom_bar(aes(fill=author_latest_company_type), stat="identity", position="dodge") +
+  geom_bar(aes(fill=author_best_company_type), stat="identity", position="dodge") +
   scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
   coord_flip() +
   theme_few() +
@@ -601,9 +603,9 @@ ggplot(author_company_type_summary, aes(x=repo_short, y=pct_authors)) +
 ```
 
 ```{r fig-company-types, fig.height=12, fig.width=10}
-ggplot(author_company_type_summary %>% filter(!is.na(author_latest_company_type)), 
+ggplot(author_company_type_summary %>% filter(!is.na(author_best_company_type)), 
        aes(x=repo_short, y=pct_authors)) +
-  geom_bar(aes(fill=author_latest_company_type), stat="identity", position="dodge") +
+  geom_bar(aes(fill=author_best_company_type), stat="identity", position="dodge") +
   scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
   coord_flip() +
   theme_few() +
@@ -615,9 +617,9 @@ ggplot(author_company_type_summary %>% filter(!is.na(author_latest_company_type)
 
 ```{r fig-companies, fig.height=12, fig.width=12}
 ggplot(author_company_summary %>% 
-         filter(author_latest_company_type %in% c("public", "private") & author_company_employees > 1), 
+         filter(author_best_company_type %in% c("public", "private") & author_company_employees > 1), 
        aes(x=repo_short, y=pct_authors)) +
-  geom_bar(aes(fill=author_latest_company), stat="identity", position="dodge") +
+  geom_bar(aes(fill=author_best_company), stat="identity", position="dodge") +
   scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
   coord_flip() +
   theme_few() +
@@ -626,9 +628,9 @@ ggplot(author_company_summary %>%
   facet_wrap(~ commit_month)
 
 ggplot(author_company_summary %>% 
-         filter(author_latest_company_type %in% c("public")), 
+         filter(author_best_company_type %in% c("public")), 
        aes(x=repo_short, y=pct_authors)) +
-  geom_bar(aes(fill=author_latest_company), stat="identity", position="dodge") +
+  geom_bar(aes(fill=author_best_company), stat="identity", position="dodge") +
   scale_y_continuous(labels = percent, breaks=pretty_breaks()) +
   coord_flip() +
   theme_few() +
@@ -642,9 +644,9 @@ ggplot(author_company_summary %>%
 ## Company Type Proportion
 
 ```{r fig-companies-has-commit, fig.height=10, fig.width=10}
-ggplot(author_company_summary_has_commit %>% filter(! is.na(author_latest_company)),
+ggplot(author_company_summary_has_commit %>% filter(! is.na(author_best_company)),
        aes(x=repo_short, y=has_commit)) +
-  geom_bar(aes(fill=author_latest_company_type), stat="identity") +
+  geom_bar(aes(fill=author_best_company_type), stat="identity") +
   guides(fill=guide_legend(title="Company", ncol=1)) +
   coord_flip() +
   theme_few() +
@@ -659,27 +661,27 @@ Whether the company had a commit in January or February (counted twice if both).
 ```{r fig-company-summary-has-commit-type, fig.height=10, fig.width=10}
 
 ggplot(author_company_summary_has_commit %>% 
-         filter(author_latest_company_type %in% c("public")), 
+         filter(author_best_company_type %in% c("public")), 
        aes(x=repo_short, y=has_commit)) +
-  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  geom_bar(aes(fill=author_best_company), stat="identity") +
   guides(fill=guide_legend(title="Company", ncol=1)) +
   coord_flip() +
   theme_few() +
   labs(x="Repository", y="Company", title="Public Companies with Affiliated Commits - 2018 Jan + Feb")
 
 ggplot(author_company_summary_has_commit %>% 
-         filter(author_latest_company_type %in% c("private") & author_company_employees > 1), 
+         filter(author_best_company_type %in% c("private") & author_company_employees > 1), 
        aes(x=repo_short, y=has_commit)) +
-  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  geom_bar(aes(fill=author_best_company), stat="identity") +
   guides(fill=guide_legend(title="Company", ncol=1)) +
   coord_flip() +
   theme_few() +
   labs(x="Repository", y="Company", title="Private Companies with Affiliated Commits - 2018 Jan + Feb")
 
 ggplot(author_company_summary_has_commit %>% 
-         filter(author_latest_company_type %in% c("education")), 
+         filter(author_best_company_type %in% c("education")), 
        aes(x=repo_short, y=has_commit)) +
-  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  geom_bar(aes(fill=author_best_company), stat="identity") +
   guides(fill=guide_legend(title="Company", ncol=1)) +
   coord_flip() +
   theme_few() +
