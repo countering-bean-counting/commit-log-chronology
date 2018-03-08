@@ -1,8 +1,10 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Commit Interval Metric Applied to Selected Deep Learning Repositories"
 params:
-  clearbit_api_key: !r Sys.getenv("API_KEY_CLEARBIT")
+  clearbit_api_key: Sys.getenv("API_KEY_CLEARBIT")
+output:
+  html_document:
+    toc: TRUE
 ---
 
 ```{r setup, include=FALSE}
@@ -31,9 +33,11 @@ Previous work considered different ways to use the commit log to learn about ope
 
 Note that comparing repositories and projects is difficult because each has their differences in terms of workflow and structure. This current version of the analysis does not take those differences into consideration but future work will.
 
-# Git Repository
+# Data Wrangling
 
-# Setup Instructions
+Retrieval and cleaning
+
+## Git Repository Setup
 
 Clone repositories into the repos folder. Currently hard-coding, will use another method in the future. While there are better ways to go about this, a quick web search turned up the following "top 10" list and it fit with requests I've gotten over the months. ^[[Packtpub's Top 10 Deep Learning Frameworks (Updated December 2017)](https://datahub.packtpub.com/deep-learning/top-10-deep-learning-frameworks/)]
 
@@ -78,7 +82,7 @@ for (repo in repos) {
 
 This notebook sets the SHA used for the analysis as a parameter to ensure reproducibility. If you want to run this against the latest changes, update the SHA in the parameters to the latest one in your local repository.
 
-# Get Git Commit Log
+## Get Git Commit Log
 
 ```{r git_log, eval=FALSE}
 
@@ -98,7 +102,7 @@ for (repo in repos) {
 }
 ```
 
-# Read in the Commit Logs
+## Read in the Commit Logs
 
 ```{r gitlog_raw, eval=FALSE}
 
@@ -169,7 +173,7 @@ gitlog_commits <- gitlog_commits_dates %>%
 saveRDS(gitlog_commits, "dl-frameworks-commit-log_gitlog_commits.Rds")
 ```
 
-# Dedupe using iGraph
+## Dedupe Authors using iGraph
 
 Normally I would argue this isn't worth it, but at some point I want to look for the same author committing to multiple repos and the group_id will be useful for that.
 
@@ -281,12 +285,9 @@ paste("identified", max(gitlog_networks$author_group),"unique authors from", n_d
 
 ```
 
-# Dominant Email Identification
+## Email Domain Identification Using Clearbit
 
-```{r stocks_lookup, eval=FALSE}
-stock <- stockSymbols(exchange = c("AMEX", "NASDAQ", "NYSE"), sort.by = c("Exchange", "Symbol"), quiet = FALSE)
-saveRDS(stock, "stocks.RDS")
-```
+Get build a domain list for a new repo we haven't run yet. This calls Clearbit's API to get additional domain info.
 
 ```{r add_new_repo, warning=FALSE, eval=FALSE}
 
@@ -313,11 +314,11 @@ clearbit <- readRDS("dl-frameworks_domain_info_clean.Rds")
 
 # find ones we don't have
 
-# clearbit_unidentified <- gitlog_networks_domains %>%
-#   anti_join(clearbit, by=c("host"="host_looked_up"))
+clearbit_unidentified <- gitlog_networks_domains %>%
+  anti_join(clearbit, by=c("host"="host_looked_up"))
 
-clearbit <- read_rds("dl-frameworks_domain_info.Rds")
-clearbit_unidentified <- clearbit %>% filter(error.type=="queued") %>% select(host_looked_up)
+# clearbit <- read_rds("dl-frameworks_domain_info.Rds")
+# clearbit_unidentified <- clearbit %>% filter(error.type=="queued") %>% select(host_looked_up)
 
 # hit up clearbit for the domains we haven't tried to identify already
 
@@ -347,13 +348,10 @@ saveRDS(clearbit, "dl-frameworks_domain_info.Rds")
 
 ```
 
-
+Call Clearbit API to get additional info about the domains. This will help to consolidate multiple domains belonging to one group and identify email providers.
 
 ```{r identify_big_orgs, warning=FALSE, eval=FALSE}
 gitlog_networks <- readRDS("dl-frameworks_network.Rds")
-
-# TODO DO NOT COMMIT
-clearbit_auth <- paste("Bearer", "")
 
 # make a list of domains
 gitlog_networks_domains <- bind_rows(gitlog_networks %>% 
@@ -392,13 +390,20 @@ for (n in 1:nrow(gitlog_networks_domains)) {
 saveRDS(clearbit, "dl-frameworks_domain_info.Rds")
 ```
 
+Clearbit data is dirty. Some of the companies listed as private are actually public and have no ticker. Also email hosts are linked to public companies. Type should be "personal" for these.
+
+Use the stock ticker to identify public companies that were misidentified by Clearbit as private.
+
+```{r stocks_lookup, eval=FALSE}
+stock <- stockSymbols(exchange = c("AMEX", "NASDAQ", "NYSE"), sort.by = c("Exchange", "Symbol"), quiet = FALSE)
+saveRDS(stock, "stocks.RDS")
+```
+
 ```{r clean_domain_lookup, eval=FALSE}
 
 # some of the company data in here isn't quite right (public companies listed as "private" and no ticker)
 clearbit <- read_rds("dl-frameworks_domain_info.Rds")
 stocks <- read_rds("stocks.Rds")
-
-# which companies have ticker symbols that got missed by Clearbit
 
 clearbit_stocks <- clearbit %>%
   select(id, name, legalName, domain, domainAliases, 
@@ -406,33 +411,10 @@ clearbit_stocks <- clearbit %>%
          location, emailProvider, 
          metrics.alexaUsRank, metrics.alexaGlobalRank, metrics.employees, metrics.annualRevenue,
          row, host_looked_up, ticker, type, foundedYear) %>%
+  mutate(legalName=ifelse(is.na(legalName), name, legalName)) %>%
   left_join(stocks %>% select(Name, Symbol, Sector, Industry), by=c("legalName"="Name"))
 
-knitr::kable(clearbit_stocks %>% 
-  filter(!is.na(legalName) & type !="public" & !is.na(Symbol)) %>% 
-  select(legalName, Symbol, ticker, type), 
-  format="pandoc", padding = 2,
-  format.args = list(border = "1"),
-  caption="Public Companies Mis-typed by Clearbit")
-
-knitr::kable(clearbit_stocks %>% 
-  filter(Symbol != ticker | (is.na(ticker) & !is.na(Symbol))) %>% 
-  select(legalName, Symbol, ticker, type), 
-  format="pandoc", padding = 2,
-  format.args = list(border = "1"),
-  caption="Public Companies Mis-typed by Clearbit")
-
-# if clearbit didn't identify a ticker but we found one in stocks, update ticker
-clearbit_stocks <- clearbit_stocks %>%
-  mutate(
-    ticker=ifelse(!is.na(legalName) & type !="public" & !is.na(Symbol), Symbol, ticker),
-    type=ifelse(!is.na(ticker), "public", type)
-  ) %>% # consolidate multiple exchanges
-  select(-Symbol) %>%
-  unique()
-
 # fix numerics that are chars
-
 clearbit_stocks <- clearbit_stocks %>%
   mutate(
     metrics.alexaUsRank = as.numeric(as.character(metrics.alexaUsRank)),
@@ -440,11 +422,90 @@ clearbit_stocks <- clearbit_stocks %>%
     metrics.employees = as.numeric(as.character(metrics.employees)),
     metrics.annualRevenue = as.numeric(as.character(metrics.annualRevenue))
     )
+                     
+# if clearbit didn't identify a ticker but we found one in stocks, update ticker
+clearbit_stocks <- clearbit_stocks %>%
+  mutate(
+    ticker=ifelse(!is.na(legalName) & emailProvider==FALSE & type !="public" & !is.na(Symbol), Symbol, ticker),
+    type=ifelse(!is.na(ticker) & emailProvider==FALSE, "public", type)
+  ) %>% # consolidate multiple exchanges
+  select(-Symbol) %>%
+  unique()
 
-write_rds(clearbit_stocks, "dl-frameworks_domain_info_clean.Rds")
+# set type to personal for email providers
+clearbit_domains <- clearbit_stocks %>%
+  mutate(
+    domainAliases=ifelse(emailProvider==TRUE & type == "public", paste(""), domainAliases), # dissasociate with corp addresses
+    domain=ifelse(emailProvider==TRUE & type == "public", host_looked_up, domain),
+    type=ifelse(emailProvider, "personal", type),
+    name=ifelse(emailProvider, paste(name, "Email"), name),
+  )
+
+# set domain for looked up hosts that reported a different main domain
+clearbit_emailProviders <- clearbit_domains %>%
+  filter(emailProvider==TRUE & host_looked_up != domain) %>%
+  mutate(domain=host_looked_up)
+
+clearbit_clean <- bind_rows(clearbit_domains, clearbit_emailProviders) %>% unique()
+
+# set github to its own type
+clearbit_domains <- clearbit_domains %>% 
+  mutate(type=ifelse(domain=="github.com", "github", type))
+
+# clearbit doesn't correctly id international educational institutions
+clearbit_domains <- clearbit_domains %>% 
+  mutate(type=ifelse(str_detect(domain, ".edu")|str_detect(domain, ".ac."), "education", type))
+
+write_rds(clearbit_domains, "dl-frameworks_domain_info_clean.Rds")
 ```
 
-```{r link_domains_with_commits, eval=FALSE}
+Attempt to add other domain aliases to the lookup but this is tricky due to email providers being lumped in with corporate addresses. If we just use the domain and not the suffixes for a join, maybe that's a short term workaround.
+
+```{r clearbit-fix-domains, eval=FALSE}
+clearbit <- readRDS("dl-frameworks_domain_info_clean.Rds")
+
+# parse out additional domains for lookups
+# sometimes the host looked up doesn't show up in aliases, even though it returns company info
+clearbit_unroll <- clearbit %>%
+  group_by(domain) %>% 
+  mutate(domainAliases = ifelse( # add the looked up host and the main domain to the aliases for later joining
+    str_detect(domainAliases, host_looked_up) | host_looked_up == domain,
+    domainAliases, # leave it alone
+    ifelse(domainAliases=="", paste(host_looked_up, domain, sep=","), # add additional hosts to aliases
+           paste(domainAliases, host_looked_up, domain, sep=","))
+  )) %>% 
+  summarise(domainAliases=paste(domainAliases, collapse=",")) %>%
+  mutate(domainAliases=str_replace_all(domainAliases, ",,", ",")) %>% # replace double commas, TODO - fix root cause
+  unnest(domainAlias=str_split(domainAliases, ",")) %>%
+  mutate(domainAlias=ifelse(domainAlias=="NA", "", domainAlias)) %>%
+  select(domain, domainAlias) %>%
+  unique()
+
+clearbit_domains_lookup <- clearbit %>%
+  select(id, name, emailProvider, type, host_looked_up, domain) %>%
+  left_join(clearbit_unroll %>% 
+              select(domain, domainAlias) %>% rename(domain_main=domain), 
+            by=c("host_looked_up"="domainAlias")) %>%
+  unique()
+
+# Fix types for email providers
+  # make 2 seperate domain listings for email providers
+# find domains with multiple entries
+# filter has_email_provider
+
+# Current (host_looked_up, domain, main_domain)
+# 999e33a7-1ecb-4408-b819-5538ad718f63 Apple TRUE public me.com apple.com apple.com
+# Fixed
+# Apple Email TRUE personal me.com, me.com, me.com <- most frequent host_looked_up becomes the defacto domain
+# add "email" to company name, make defacto domain the most frequent host_looked_up
+
+# TODO Gmail isn't Google!
+# if alias already exists as a domain entry, it probably shouldn't be added? not sure...
+
+```
+
+
+```{r link_domains_with_commits, eval=FALSE, warning=FALSE}
 
 clearbit <- readRDS("dl-frameworks_domain_info_clean.Rds")
 gitlog_networks <- readRDS("dl-frameworks_network.Rds")
@@ -453,48 +514,54 @@ domain_company_type <- clearbit %>%
   filter(! is.na(id)) %>% 
   select(domain, type, name, metrics.employees) %>%
   rename(host=domain, company_type=type, company_name=name) %>%
-  mutate(domain=suffix_extract(host)$domain)
+  mutate(domain=suffix_extract(host)$domain) %>%
+  select(-host) %>%
+  unique()
 
 # join by committer email
 gitlog_networks_org <- gitlog_networks %>% 
   left_join(domain_company_type %>% 
-              select(-host) %>%
               rename(committer_domain=domain, 
                      committer_company_name=company_name, 
                      committer_company_type=company_type, 
-                     committer_company_employees=metrics.employees)) %>%
-  unique()
+                     committer_company_employees=metrics.employees))
 
 # join by author email 
 gitlog_networks_org <- gitlog_networks_org %>% 
   left_join(domain_company_type %>% 
-              select(-host) %>%
               rename(author_domain=domain, 
                      author_company_name=company_name, 
-                     author_company_type=company_type,
-                     author_company_employees=metrics.employees)) %>%
-  unique()
+                     author_company_type=company_type, 
+                     author_company_employees=metrics.employees))
+
 
 
 saveRDS(gitlog_networks_org, "dl-frameworks-commit-log_domain_info.Rds")
 
 ```
 
+# Author Email Consolidation
+
+Use the email from the latest commit.
+
 ```{r author_company_summary, fig.height=10, fig.width=12}
 
 gitlog_networks_org <-readRDS("dl-frameworks-commit-log_domain_info.Rds")
-gitlog_networks_feb <- gitlog_networks_org %>% filter(commit_month > "2017-12-01" & commit_month < "2018-03-01")
+gitlog_networks_feb <- gitlog_networks_org %>% 
+  filter(commit_month > "2017-12-01" & commit_month < "2018-03-01") %>%
+  group_by(author_group) %>%
+  mutate(latest_email = author_email[which.max(commit_date)],
+         author_latest_company=author_company_name[which.max(commit_date)],
+         author_latest_company_type=author_company_type[which.max(commit_date)],
+         author_latest_company_employees=author_company_employees[which.max(commit_date)])
+         #author_latest_company_type = ifelse(is.na(author_latest_company_type), "No Domain Info", author_latest_company_type)) 
+
 saveRDS(gitlog_networks_feb, "dl-frameworks-network-public-companies_Feb2018.Rds")
 
 author_company_type_summary <- gitlog_networks_feb %>%
   ungroup() %>%
   group_by(repo_short) %>%
   mutate(total_authors=n_distinct(author_group)) %>%
-  group_by(author_group) %>%
-  mutate(latest_email = author_email[which.max(commit_date)],
-         author_latest_company=author_company_name[which.max(commit_date)],
-         author_latest_company_type=author_company_type[which.max(commit_date)],
-         author_latest_company_employees=author_company_employees[which.max(commit_date)]) %>%
   group_by(repo_short, author_latest_company_type) %>%
   summarise(num_authors=n_distinct(author_group),
             pct_authors=round(num_authors/first(total_authors), 2),
@@ -503,20 +570,24 @@ author_company_type_summary <- gitlog_networks_feb %>%
 author_company_summary <- gitlog_networks_feb %>%
   group_by(repo_short, commit_month) %>%
   mutate(total_authors=n_distinct(author_group)) %>%
-  group_by(author_group) %>%
-  mutate(latest_email = author_email[which.max(commit_date)],
-         author_latest_company=author_company_name[which.max(commit_date)],
-         author_latest_company_type=author_company_type[which.max(commit_date)],
-         author_latest_company_employees=author_company_employees[which.max(commit_date)]) %>%
   group_by(commit_month, repo_short, author_latest_company) %>%
   summarise(num_authors=n_distinct(author_group),
             pct_authors=round(num_authors/first(total_authors), 2),
             author_latest_company_type=first(author_latest_company_type),
             author_company_employees=first(author_company_employees))
 
-
+author_company_summary_has_commit <- gitlog_networks_feb %>%
+  group_by(commit_month, repo_short, author_latest_company) %>%
+  summarise(has_commit = TRUE, 
+            author_company_employees=first(author_latest_company_employees),
+            author_latest_company_type = first(author_latest_company_type)
+            )
 
 ```
+
+# Author Proportion
+
+## Authors Per Company Type
 
 ```{r fig-company-types-na, fig.height=12, fig.width=10}
 
@@ -539,6 +610,8 @@ ggplot(author_company_type_summary %>% filter(!is.na(author_latest_company_type)
   labs(x="Repository", y="Authors (%)", title="Authors per Company Type - 2018 Jan + Feb") +
   guides(fill=guide_legend(title="Company Type"))
 ```
+
+## Authors per Company
 
 ```{r fig-companies, fig.height=12, fig.width=12}
 ggplot(author_company_summary %>% 
@@ -564,7 +637,54 @@ ggplot(author_company_summary %>%
   facet_wrap(~ commit_month)
 ```
 
+# Commit Interval
 
+## Company Type Proportion
+
+```{r fig-companies-has-commit, fig.height=10, fig.width=10}
+ggplot(author_company_summary_has_commit %>% filter(! is.na(author_latest_company)),
+       aes(x=repo_short, y=has_commit)) +
+  geom_bar(aes(fill=author_latest_company_type), stat="identity") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Company", title="Companies with Affiliated Commits - 2018 Jan + Feb")
+
+```
+
+## Company Commit Interval
+
+Whether the company had a commit in January or February (counted twice if both).
+
+```{r fig-company-summary-has-commit-type, fig.height=10, fig.width=10}
+
+ggplot(author_company_summary_has_commit %>% 
+         filter(author_latest_company_type %in% c("public")), 
+       aes(x=repo_short, y=has_commit)) +
+  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Company", title="Public Companies with Affiliated Commits - 2018 Jan + Feb")
+
+ggplot(author_company_summary_has_commit %>% 
+         filter(author_latest_company_type %in% c("private") & author_company_employees > 1), 
+       aes(x=repo_short, y=has_commit)) +
+  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Company", title="Private Companies with Affiliated Commits - 2018 Jan + Feb")
+
+ggplot(author_company_summary_has_commit %>% 
+         filter(author_latest_company_type %in% c("education")), 
+       aes(x=repo_short, y=has_commit)) +
+  geom_bar(aes(fill=author_latest_company), stat="identity") +
+  guides(fill=guide_legend(title="Company", ncol=1)) +
+  coord_flip() +
+  theme_few() +
+  labs(x="Repository", y="Company", title="Education Institutions with Affiliated Commits - 2018 Jan + Feb")
+```
 
 
 
