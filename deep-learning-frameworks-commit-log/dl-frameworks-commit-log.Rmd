@@ -421,6 +421,9 @@ clearbit_stocks <- clearbit %>%
          metrics.alexaUsRank, metrics.alexaGlobalRank, metrics.employees, metrics.annualRevenue,
          row, host_looked_up, ticker, type, foundedYear) %>%
   mutate(legalName=ifelse(is.na(legalName), name, legalName)) %>%
+  mutate( # manually add missing stocks (acquired, don't have a listing but are public)
+    legalName=ifelse(domain == "yahoo-inc.com", "Altaba Inc.", legalName)
+  ) %>%
   left_join(stocks %>% select(Name, Symbol, Sector, Industry), by=c("legalName"="Name"))
 
 # fix numerics that are chars
@@ -436,7 +439,7 @@ clearbit_stocks <- clearbit_stocks %>%
 clearbit_stocks <- clearbit_stocks %>%
   mutate(
     ticker=ifelse(!is.na(legalName) & emailProvider==FALSE & type !="public" & !is.na(Symbol), Symbol, ticker),
-    type=ifelse(!is.na(ticker) & emailProvider==FALSE, "public", type)
+    type=ifelse(!is.na(ticker) & emailProvider==FALSE, "public", type),
   ) %>% # consolidate multiple exchanges
   select(-Symbol) %>%
   unique()
@@ -471,7 +474,11 @@ clearbit_clean <- bind_rows(clearbit_domains, clearbit_emailProviders) %>% uniqu
 
 # clearbit doesn't correctly id international educational institutions
 clearbit_domains <- clearbit_domains %>% 
-  mutate(type=ifelse(str_detect(domain, "\\.edu")|str_detect(domain, "\\.ac\\."), "education", type))
+  mutate(type=ifelse(
+    str_detect(domain, "\\.edu")|
+      str_detect(domain, "\\.ac\\.")|
+      str_detect(host_looked_up, "uni-")|
+      str_detect(name, "Universit"), "education", type))
 
 # orgs should be non-profits
 clearbit_domains <- clearbit_domains %>% 
@@ -571,10 +578,7 @@ print(domain_check)
 clearbit_dupes_fixed <- clearbit_dupes %>%
   filter(!(domain_lookup == "sun" & domain_group == "oracle.com") &
            !(domain_lookup == "uiuc" & domain_group == "github.io")
-    ) %>%
-  mutate(
-    type=ifelse(domain_group=="uni-konstanz.de", "education", type)
-  )
+    )
 
 # make sure additional fields are consistent for all domain groups
 # name, employees
@@ -582,6 +586,8 @@ clearbit_groups_fixed <- clearbit_dupes_fixed %>%
   ungroup() %>%
   group_by(domain_group) %>%
   mutate(
+    num_types=n_distinct(type),
+    type=ifelse(num_types > 1 & any(type=="education"), type[which(type=="education")], type),
     metrics.employees=ifelse(any(!is.na(metrics.employees)), 
                                  metrics.employees[which.max(metrics.employees)], 
                                  metrics.employees),
@@ -875,8 +881,95 @@ ggplot(author_company_summary_has_commit %>%
   labs(x="Repository", y="Company has Commit", title="Education Institutions with Affiliated Commits - 2018 Jan + Feb")
 ```
 
+# Past Trends
+
+```{r all-activity-past}
+
+gitlog_networks_org <-readRDS("dl-frameworks-commit-log_domain_info.Rds")
+
+gitlog_past <- gitlog_networks_org %>% 
+  group_by(commit_month) %>% # this should do a better job of prioritizing and should probably be a function call
+  mutate(author_company_type=ifelse(is.na(author_company_type), "no domain record", author_company_type)) %>%
+  ungroup()
+
+author_affiliate_summary <- gitlog_past %>%
+  group_by(repo_short, commit_month, author_domain_group) %>%
+  summarise(has_commit = TRUE, 
+            author_company_name = first(author_company_name), # these are the same per domain_group
+            author_company_employees=first(author_company_employees),
+            author_company_type = first(author_company_type)
+            )
+
+```
+
+```{r fig-historical-affiliation-type, fig.height=12, fig.width=12}
+ggplot(author_affiliate_summary,
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_type), stat="identity") +
+  guides(fill=guide_legend(title="Company Type", ncol=1)) +
+  theme_few() +
+  labs(x="Month", y=element_blank(), title="Company Types with Affiliated Commits") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+```
+
+```{r fig-historical-affiliation-public, fig.height=12, fig.width=12}
+ggplot(author_affiliate_summary %>% filter(author_company_type=="public"),
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_name), stat="identity") +
+  guides(fill=guide_legend(title="Affiliate", ncol=1)) +
+  theme_few() +
+  labs(x="Month", y=element_blank(), title="Affiliated Commits for Public Companies") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+```
+```{r fig-historical-affiliation-public-tf, fig.height=12, fig.width=12}
+ggplot(author_affiliate_summary %>% filter(author_company_type=="public" & repo_short=="tensorflow"),
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_name), stat="identity") +
+  guides(fill=guide_legend(title="Affiliate", ncol=1)) +
+  theme_few() +
+  labs(x="Month", y=element_blank(), title="Affiliated Commits for Public Companies on Tensorflow") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+
+ggsave("img/Affiliated Commits for Public Companies on Tensorflow.png")
+
+ggplot(author_affiliate_summary %>% 
+         filter(author_company_type=="private" & repo_short=="tensorflow" & author_company_employees > 1),
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_name), stat="identity") +
+  guides(fill=guide_legend(title="Affiliate", ncol=1)) +
+  theme_few() +
+  labs(x="Month", y=element_blank(), title="Affiliated Commits for Private Companies on Tensorflow") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+
+ggsave("img/Affiliated Commits for Private Companies on Tensorflow.png")
+```
 
 
+```{r fig-historical-affiliation-private, fig.height=12, fig.width=12}
+ggplot(author_affiliate_summary %>% filter(author_company_type=="private" & author_company_employees > 75),
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_name), stat="identity") +
+  guides(fill=guide_legend(title="Affiliate", ncol=2)) +
+  theme_few() +
+  labs(x="Month", y="Affiliate has Commit", title="Affiliated Commits for Private Companies") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+```
+
+```{r fig-historical-affiliation-edu, fig.height=12, fig.width=12}
+ggplot(author_affiliate_summary %>% filter(author_company_type=="education"),
+       aes(x=commit_month, y=has_commit)) +
+  geom_bar(aes(fill=author_company_name), stat="identity", show.legend = FALSE) +
+  guides(fill=guide_legend(title="Affiliate", ncol=1)) +
+  theme_few() +
+  labs(x="Month", y=element_blank(), title="Affiliated Commits for Education") +
+  theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  facet_wrap(~ repo_short, scales="free", ncol=3)
+```
 
 # Conclusions
 
