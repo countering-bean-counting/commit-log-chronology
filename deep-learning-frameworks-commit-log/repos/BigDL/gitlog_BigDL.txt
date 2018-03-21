@@ -1,3 +1,66 @@
+2018-03-20|Jerry Wu|wzhongyuan@gmail.com|2018-03-20|GitHub|noreply@github.com|7199788
+2018-03-20|Xu Xiao|lovedreamf@gmail.com|2018-03-20|Ian Wong|yiheng.wang@intel.com|855be16
+2018-03-20|Ian Wong|yiheng.wang@intel.com|2018-03-20|GitHub|noreply@github.com|3e5e6f2
+2018-03-19|jenniew|jenniewang123@gmail.com|2018-03-19|GitHub|noreply@github.com|4838e53
+2018-03-20|Ian Wong|yiheng.wang@intel.com|2018-03-20|Xin Qiu|qiuxin2012@users.noreply.github.com|22628a5
+2018-03-19|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|16374b9
+2018-03-16|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|a98d4c1
+2018-03-14|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|be01e81
+2018-03-13|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|77a3525
+2018-03-12|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|e01c97f
+2018-02-28|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|f947755
+2018-02-27|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|95d1234
+2018-02-26|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|04966ac
+2018-02-26|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|625096b
+2018-02-22|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|2cd5186
+2018-02-20|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|967582e
+2018-02-13|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|8d6c3a2
+2018-02-12|jenniew|jenniewang123@gmail.com|2018-03-19|jenniew|jenniewang123@gmail.com|341d2be
+2018-03-20|li,zhichao|zhichao.li@intel.com|2018-03-20|GitHub|noreply@github.com|617075e
+2018-03-19|helenlly|helenlly@yahoo.com|2018-03-20|helenlly|helenlly@yahoo.com|6ccc292
+2018-03-19|Yuhao Yang|yuhao.yang@intel.com|2018-03-19|GitHub|noreply@github.com|6dec07e
+2018-03-19|Jerry Wu|wzhongyuan@gmail.com|2018-03-19|GitHub|noreply@github.com|82200a5
+2018-03-19|Kai Huang|huangkaivision@gmail.com|2018-03-19|GitHub|noreply@github.com|34fdb05
+2018-03-17|Guoqiong Song|guoqiong.song@intel.com|2018-03-17|GitHub|noreply@github.com|9e0b676
+2018-03-17|Guoqiong Song|guoqiong.song@intel.com|2018-03-17|GitHub|noreply@github.com|3f982db
+2018-03-17|Guoqiong Song|guoqiong.song@intel.com|2018-03-17|GitHub|noreply@github.com|e6a2560
+2018-03-16|Jerry Wu|wzhongyuan@gmail.com|2018-03-16|Ian Wong|yiheng.wang@intel.com|2f85f4c
+2018-03-16|Kai Huang|huangkaivision@gmail.com|2018-03-16|GitHub|noreply@github.com|02207a0
+2018-03-16|li,zhichao|zhichao.li@intel.com|2018-03-16|GitHub|noreply@github.com|495de27
+2018-03-16|Kai Huang|huangkaivision@gmail.com|2018-03-16|GitHub|noreply@github.com|719be9d
+2018-03-15|Kai Huang|huangkaivision@gmail.com|2018-03-15|GitHub|noreply@github.com|a80dfee
+2018-03-14|Xu Xiao|lovedreamf@gmail.com|2018-03-14|Ian Wong|yiheng.wang@intel.com|8a2aa5a
+2018-03-14|Kai Huang|huangkaivision@gmail.com|2018-03-14|GitHub|noreply@github.com|44072a4
+2018-03-13|Yuhao Yang|yuhao.yang@intel.com|2018-03-13|GitHub|noreply@github.com|cceb0b5
+2018-03-13|Jerry Wu|wzhongyuan@gmail.com|2018-03-13|GitHub|noreply@github.com|6b5215a
+2018-03-13|Jerry Wu|wzhongyuan@gmail.com|2018-03-13|GitHub|noreply@github.com|12d0538
+2018-03-13|li,zhichao|zhichao.li@intel.com|2018-03-13|GitHub|noreply@github.com|092923c
+2018-03-13|Xu Xiao|lovedreamf@gmail.com|2018-03-13|Xin Qiu|qiuxin2012@users.noreply.github.com|c6e0c78
+2018-03-12|dding3|ding.ding@intel.com|2018-03-13|Ian Wong|yiheng.wang@intel.com|f6fa5aa
+2018-03-12|Jerry Wu|wzhongyuan@gmail.com|2018-03-12|GitHub|noreply@github.com|8f0bafd
+2018-03-12|Ian Wong|yiheng.wang@intel.com|2018-03-12|GitHub|noreply@github.com|b8058f3
+2018-03-12|Quincy2014|412363303@qq.com|2018-03-12|Jerry Wu|wzhongyuan@gmail.com|8bf0a3c
+2018-03-09|Hawkwood|2041829103@qq.com|2018-03-09|Ian Wong|yiheng.wang@intel.com|92cb99f
+2018-03-08|Xu Xiao|lovedreamf@gmail.com|2018-03-08|Xin Qiu|qiuxin2012@users.noreply.github.com|796d2df
+2018-03-08|Kai Huang|huangkaivision@gmail.com|2018-03-08|GitHub|noreply@github.com|68a2108
+2018-03-08|Jerry Wu|wzhongyuan@gmail.com|2018-03-08|GitHub|noreply@github.com|ce47e81
+2018-03-07|dding3|ding.ding@intel.com|2018-03-07|GitHub|noreply@github.com|4ba0e40
+2018-03-07|Dongjie Shi|glorysdj@gmail.com|2018-03-07|Ian Wong|yiheng.wang@intel.com|44aa6d5
+2018-03-07|tosky001|yaojianhang001@126.com|2018-03-07|Ian Wong|yiheng.wang@intel.com|193428d
+2018-03-07|Ian Wong|yiheng.wang@intel.com|2018-03-07|GitHub|noreply@github.com|ea31049
+2018-03-07|Ian Wong|yiheng.wang@intel.com|2018-03-07|GitHub|noreply@github.com|7e40e3a
+2018-03-07|Ian Wong|yiheng.wang@intel.com|2018-03-07|GitHub|noreply@github.com|c5a0c46
+2018-03-06|Yang Wang|tiandiwoxin@icloud.com|2018-03-06|Ian Wong|yiheng.wang@intel.com|cbeed83
+2018-03-06|Quincy2014|412363303@qq.com|2018-03-06|Jerry Wu|wzhongyuan@gmail.com|6b4aef9
+2018-03-06|tosky001|yaojianhang001@126.com|2018-03-06|Ian Wong|yiheng.wang@intel.com|e516ad4
+2018-03-06|Dongjie Shi|glorysdj@gmail.com|2018-03-06|Ian Wong|yiheng.wang@intel.com|0f4c284
+2018-03-06|Jerry Wu|wzhongyuan@gmail.com|2018-03-06|GitHub|noreply@github.com|f231ab4
+2018-03-06|Quincy2014|412363303@qq.com|2018-03-06|Jerry Wu|wzhongyuan@gmail.com|e62be70
+2018-03-06|Quincy2014|412363303@qq.com|2018-03-06|Jerry Wu|wzhongyuan@gmail.com|d83765b
+2018-03-05|Xu Xiao|lovedreamf@gmail.com|2018-03-05|Ian Wong|yiheng.wang@intel.com|a0a7c42
+2018-03-05|Quincy2014|412363303@qq.com|2018-03-05|Jerry Wu|wzhongyuan@gmail.com|635ffde
+2018-03-05|Quincy2014|412363303@qq.com|2018-03-05|Jerry Wu|wzhongyuan@gmail.com|5370b00
+2018-03-05|Quincy2014|412363303@qq.com|2018-03-05|Jerry Wu|wzhongyuan@gmail.com|a45f9e6
 2018-03-01|Yao Zhang|psyyz10@nottingham.ac.uk|2018-03-01|GitHub|noreply@github.com|9c7334c
 2018-03-01|Jerry Wu|wzhongyuan@gmail.com|2018-03-01|GitHub|noreply@github.com|d0ac131
 2018-03-01|tosky001|yaojianhang001@126.com|2018-03-01|Ian Wong|yiheng.wang@intel.com|3009923

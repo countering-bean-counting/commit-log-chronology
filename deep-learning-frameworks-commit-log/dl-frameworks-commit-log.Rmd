@@ -47,19 +47,23 @@ Clone repositories into the repos folder. Currently hard-coding, will use anothe
 repos <- c(
   "pair-code/deeplearnjs",
   "microsoft/cntk",
-  "bvlc/caffe",
-  "tensorflow/tensorflow",
   "aws/sagemaker-python-sdk",
   "intel-analytics/BigDL",
   "apache/incubator-mxnet",
-  "deeplearning4j/deeplearning4j",
-  "pytorch/pytorch",
-  "keras-team/keras",
   "apple/coremltools",
-  "h2oai/h2o-3",
-  "scikit-learn/scikit-learn",
-  "IBM/FfDL",
-  "caffe2/caffe2"
+  "IBM/FfDL"
+)
+
+# all repo activity will be pulled for these
+orgs <- c(
+  "caffe2",
+  "deeplearning4j",
+  "h2oai",
+  "keras-team",
+  "kubeflow",
+  "pytorch",
+  "scikit-learn",
+  "tensorflow"
 )
 
 ```
@@ -67,12 +71,19 @@ repos <- c(
 
 ```{r git_clone, eval=FALSE}
 # Clone the repo into the data directory for this project - set eval to FALSE so we don't do this each time
+source(here::here("git-commit-logging", "git-commit-log.R"))
 
 for (repo in repos) {
-  git_url <- paste0("git@github.com:", repo, ".git")
-  repo_short <- str_split(repo, "/")[[1]][2]
-  dir.create(here::here("repos"), "/", repo_short)
-  git_cmd <- paste0("git clone ", git_url, " ", here::here("repos"), "/", repo_short, "/repo")
+  clone_path <- here::here("repos")
+  clone_path_full <- get_git_clone_path_full(repo, clone_path)
+  
+  if (dir.exists(clone_path_full)) {
+    git_cmd <- get_git_pull_repo_cmd(repo, clone_path)
+  } else {
+    dir.create(clone_path_full)
+    git_cmd <- get_git_clone_repo_cmd(repo, clone_path)
+  }
+  
   print(git_cmd)
   system(git_cmd)
 }
@@ -85,17 +96,11 @@ This notebook sets the SHA used for the analysis as a parameter to ensure reprod
 
 ```{r git_log, eval=FALSE}
 
+source(here::here("git-commit-logging", "git-commit-log.R"))
+
 for (repo in repos) {
-  repo_short <- str_split(repo, "/")[[1]][2]
-  
-  repo_path <- here::here("repos", repo_short, "repo")
-  gitlog_file <- paste0("gitlog_", repo_short, ".txt")
-  
-  git_log_cmd <- paste0('cd ', repo_path,
-                     '; git log ', 
-                     ' --no-merges ',
-                     ' --date=short --pretty=tformat:"%ad|%an|%ae|%cd|%cn|%ce|%h" > ', 
-                     "../", gitlog_file)
+  clone_path <- here::here("repos")
+  git_log_cmd <- get_git_log_cmd(repo, clone_path)
   print(git_log_cmd)
   system(git_log_cmd)
 }
@@ -103,78 +108,19 @@ for (repo in repos) {
 
 ## Read in the Commit Logs
 
-```{r gitlog_raw, eval=FALSE}
+```{r gitlog_raw, eval=FALSE, message=FALSE}
+gitlog_rds <- here::here("data", "dl-frameworks-commit-log_gitlog.Rds")
 
-gitlog_raw <- data_frame()
+source(here::here("git-commit-logging", "git-commit-log.R"))
+gitlog <- data_frame()
 
 for (repo in repos) {
-  repo_short <- str_split(repo, "/")[[1]][2]
-  gitlog_path <- here::here("repos", repo_short, paste0("gitlog_", repo_short, ".txt"))
-
-  gitlog_repo <- read_delim(gitlog_path,
-                         delim = "|", quote="",
-                         col_names=c("author_date", "author_name", "author_email", 
-                                   "committer_date", "committer_name", "committer_email", 
-                                   "sha"))
-  gitlog_repo <- gitlog_repo %>% mutate(repo=repo, repo_short=repo_short)
-  print(repo_short)
-  gitlog_raw <- bind_rows(gitlog_repo, gitlog_raw)
+  clone_path <- here::here("repos")
+  print(repo)
+  gitlog <- bind_rows(read_git_log(repo, clone_path), gitlog)
 }
 
-# for adding new repos
-# gitlog_raw_new <- gitlog_raw
-# gitlog_curr <- read_rds("dl-frameworks-commit-log_gitlog_raw.Rds")
-# gitlog_raw <- bind_rows(gitlog_curr, gitlog_raw_new)
-
-saveRDS(gitlog_raw, "dl-frameworks-commit-log_gitlog_raw.Rds")
-```
-
-## Create Time Intervals
-
-```{r gitlog_dates, eval=FALSE}
-gitlog_raw <- readRDS("dl-frameworks-commit-log_gitlog_raw.Rds")
-
-# fix names and emails to be all lowercase
-gitlog_commits_dates <- gitlog_raw %>%
-  mutate(
-         author_date=as.Date(author_date, tz="UTC"),
-         committer_date=as.Date(committer_date, tz="UTC")
-    ) %>% 
-  mutate(
-    commit_date=ymd(committer_date),
-    commit_year=floor_date(commit_date, "year"),
-    commit_halfyear=floor_date(commit_date, "halfyear"),
-    commit_quarter=floor_date(commit_date, "quarter"),
-    commit_month=floor_date(commit_date, "month"),
-    commit_bimonth=floor_date(commit_date, "bimonth"),
-    commit_week=floor_date(commit_date, "week")
-  )
-```
-
-## Extract Email Domains
-
-```{r gitlog_email_domains, eval=FALSE}
-
-gitlog_commits <- gitlog_commits_dates %>% 
-  mutate(
-         author_name=str_to_lower(author_name),
-         author_email=str_to_lower(author_email),
-         committer_name=str_to_lower(committer_name),
-         committer_email=str_to_lower(committer_email)
-    ) %>% 
-  separate(author_email, c("author_username", "author_host"), sep="@", remove=FALSE) %>%
-  separate(committer_email, c("committer_username", "committer_host"), sep="@", remove=FALSE) %>%
-  mutate(
-    author_domain = suffix_extract(author_host)$domain,
-    author_suffix = suffix_extract(author_host)$suffix,
-    committer_domain = suffix_extract(committer_host)$domain,
-    committer_suffix = suffix_extract(committer_host)$suffix,
-    )
-
-```
-
-```{r export_gitlog_commits, eval=FALSE}
-saveRDS(gitlog_commits, "dl-frameworks-commit-log_gitlog_commits.Rds")
+saveRDS(gitlog, gitlog_rds)
 ```
 
 ## Dedupe Authors using iGraph
