@@ -1,7 +1,8 @@
 ---
 title: "Commit Interval Metric Applied to Selected Deep Learning Repositories"
 params:
-  clearbit_api_key: Sys.getenv("API_KEY_CLEARBIT")
+  clearbit_api_key: !r Sys.getenv("API_KEY_CLEARBIT")
+  gitlog_rds: !r here::here("data", "dl-frameworks-commit-log_gitlog.Rds")
 output:
   html_document:
     toc: TRUE
@@ -109,7 +110,7 @@ for (repo in repos) {
 ## Read in the Commit Logs
 
 ```{r gitlog_raw, eval=FALSE, message=FALSE}
-gitlog_rds <- here::here("data", "dl-frameworks-commit-log_gitlog.Rds")
+gitlog_rds <- params$gitlog_rds
 
 source(here::here("git-commit-logging", "git-commit-log.R"))
 gitlog <- data_frame()
