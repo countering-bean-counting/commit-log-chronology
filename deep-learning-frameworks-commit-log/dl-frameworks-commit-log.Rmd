@@ -3,6 +3,9 @@ title: "Commit Interval Metric Applied to Selected Deep Learning Repositories"
 params:
   clearbit_api_key: !r Sys.getenv("API_KEY_CLEARBIT")
   gitlog_rds: !r here::here("data", "dl-frameworks-commit-log_gitlog.Rds")
+  gh_id: !r Sys.getenv("API_KEY_GITHUB_ID")
+  gh_secret: !r Sys.getenv("API_KEY_GITHUB_SECRET")
+  gh_token: !r Sys.getenv("API_KEY_GITHUB_TOKEN")
 output:
   html_document:
     toc: TRUE
@@ -45,6 +48,7 @@ Clone repositories into the repos folder. Currently hard-coding, will use anothe
 
 ```{r repositories}
 
+# github
 repos <- c(
   "pair-code/deeplearnjs",
   "microsoft/cntk",
@@ -52,25 +56,93 @@ repos <- c(
   "intel-analytics/BigDL",
   "apache/incubator-mxnet",
   "apple/coremltools",
-  "IBM/FfDL"
+  "ibm/ffdl",
+  "paddlepaddle/paddle"
 )
 
 # all repo activity will be pulled for these
-orgs <- c(
+projects <- c(
   "caffe2",
   "deeplearning4j",
   "h2oai",
   "keras-team",
   "kubeflow",
+  "paddlepaddle",
   "pytorch",
   "scikit-learn",
   "tensorflow"
 )
 
+# not all projects use github or are mirrored
+# git clone https://gerrit.acumos.org/r/REPO
+# projects - https://gerrit.acumos.org/r/#/admin/projects/
+projects_gerrit <- read_csv('
+acumos, https://gerrit.acumos.org/r/
+', col_names=c("name","gerrit_url"))
+
+```
+
+Get top repos for a project.
+
+```{r get_project_repos, eval=FALSE}
+
+query_params <- list(
+  client_id=params$gh_id, 
+  client_secret=params$gh_secret, 
+  per_page=100)
+
+get_gh_api_resp <- function (req_url, query, access_token, accept_text) {
+  if(str_length(access_token) > 0) {
+    req_url <- paste0(req_url, "?access_token=", access_token)
+  }
+
+  req <- GET(req_url, query, accept(accept_text))
+  json <- content(req, as = "text")
+  df <- fromJSON(json, flatten=TRUE)
+}
+
+# get a list of repos for the project (we'll just do top ones instead of getting *all* of them)
+
+github_project_repos_url <- "https://api.github.com/orgs/:id/repos?sort=pushed"
+
+project_repos <- data_frame()
+for (n in projects) {
+  out_file <- paste("data", "repos", "downloads", paste(n, "repos.csv", sep="_"), sep="/")
+  
+  org_repos_url <- str_replace(github_project_repos_url, ":id", n)
+  print(org_repos_url)
+  org_repos <- get_gh_api_resp(repos_url, append(query_params, c(sort="pushed")), params$gh_token, "")
+  
+#   if (length(repos) > 0) {
+#     repos <- repos %>%
+#       mutate(github_project_repos_url
+#         team=teams$name[[n]]
+#       )
+#   }
+# 
+#   write_csv(repos, out_file)
+   project_repos <- bind_rows(org_repos, project_repos)
+}
+
+write_csv(project_repos, "data/project_repos.csv")
+saveRDS(project_repos, "data/project_repos.Rds")
+
+repos <- append(repos, project_repos$full_name)
+
+# Clone the repos
+
 ```
 
 
-```{r git_clone, eval=FALSE}
+
+Clone the repos we're interested in.
+
+```{r git_clone}
+
+# Add the project repos
+project_repos <- readRDS("data/project_repos.Rds")
+repos <- append(repos, project_repos$full_name)
+
 # Clone the repo into the data directory for this project - set eval to FALSE so we don't do this each time
 source(here::here("git-commit-logging", "git-commit-log.R"))
 
@@ -90,6 +162,27 @@ for (repo in repos) {
 }
 
 ```
+
+
+Clone repos using Gerrit not hosted in Github.
+
+```{r git_clone_gerrit, eval=FALSE}
+
+source(here::here("git-commit-logging", "git-commit-log.R"))
+
+for (n in 1:nrow(projects_gerrit)) {
+  project <- projects_gerrit[n]
+  print(paste(project$name))
+  
+  # get a list of repos from the gerrit page
+  
+  # make a project folder
+  
+  # clone each of them
+}
+
+```
+
 
 This notebook sets the SHA used for the analysis as a parameter to ensure reproducibility. If you want to run this against the latest changes, update the SHA in the parameters to the latest one in your local repository.
 
@@ -129,13 +222,45 @@ saveRDS(gitlog, gitlog_rds)
 Normally I would argue this isn't worth it, but at some point I want to look for the same author committing to multiple repos and the group_id will be useful for that.
 
 ```{r emails_graph, eval=FALSE, warning=FALSE}
+source(here::here("git-commit-logging", "git-commit-log-email-network.R"))
+gitlog_networks <- get_gitlog_network(gitlog)
+saveRDS(gitlog_networks, "data/dl-frameworks_network.Rds")
 
-saveRDS(gitlog_networks, "dl-frameworks_network.Rds")
-
-paste("identified", max(gitlog_networks$committer_group),"unique committers from", n_distinct(gh_emails$email),"emails")
-paste("identified", max(gitlog_networks$author_group),"unique authors from", n_distinct(gh_emails$email),"emails")
+# paste("identified", max(gitlog_networks$committer_group),"unique committers from", n_distinct(gh_emails$email),"emails")
+# paste("identified", max(gitlog_networks$author_group),"unique authors from", n_distinct(gh_emails$email),"emails")
 
 ```
+
+```{r extract_ibm}
+gitlog_networks <- read_rds("data/dl-frameworks_network.Rds")
+gitlog_ibm_author <- gitlog_networks %>%
+  group_by(repo, author_group) %>%
+  summarize(is_ibm=any(str_detect(author_domain, "ibm"))) %>%
+  filter(is_ibm)
+
+gitlog_ibm_author <- gitlog_networks %>% 
+  select(author_name, author_email, author_group) %>% 
+  unique() %>%
+  right_join(gitlog_ibm_author) %>%
+  select(-is_ibm) %>%
+  rename(name=author_name, email=author_email, group=author_group)
+
+gitlog_ibm_committer <- gitlog_networks %>%
+  group_by(repo, committer_group) %>%
+  summarize(is_ibm=any(str_detect(committer_domain, "ibm"))) %>%
+  filter(is_ibm)
+
+gitlog_ibm_committer <- gitlog_networks %>% 
+  select(committer_name, committer_email, committer_group) %>% 
+  unique() %>%
+  right_join(gitlog_ibm_committer) %>%
+  select(-is_ibm) %>%
+  rename(name=committer_name, email=committer_email, group=committer_group)
+
+gitlog_ibm <- bind_rows(gitlog_ibm_committer, gitlog_ibm_author) %>% filter(repo!="ibm/ffdl") %>% unique()
+
+```
+
 
 ## Email Domain Identification Using Clearbit
 
@@ -146,7 +271,7 @@ Get build a domain list for a new repo we haven't run yet. This calls Clearbit's
 ```{r add_new_repo, warning=FALSE, eval=FALSE}
 
 # run repo etc above, rebuild network
-gitlog_networks <- readRDS("dl-frameworks_network.Rds")
+gitlog_networks <- readRDS("data/dl-frameworks_network.Rds")
 
 # make the domain list
 gitlog_networks_domains <- bind_rows(gitlog_networks %>% 
@@ -164,22 +289,24 @@ gitlog_networks_domains <- gitlog_networks_domains %>%
 # check which ones we already have
 
 # current clean list
-clearbit_clean <- readRDS("dl-frameworks_domain_info_clean.Rds")
-clearbit <- read_rds("dl-frameworks_domain_info.Rds")
+clearbit_clean <- readRDS("data/dl-frameworks_domain_info_clean.Rds")
+clearbit <- read_rds("data/dl-frameworks_domain_info.Rds")
 
 # find ones we don't have
 
 clearbit_unidentified <- gitlog_networks_domains %>%
   anti_join(clearbit, by=c("host"="host_looked_up"))
 
-clearbit_unidentified <- clearbit %>% filter(error.type=="queued") %>% select(host_looked_up)
+# For rerunning
+# clearbit_unidentified <- clearbit %>% filter(error.type=="queued") %>% select(host_looked_up)
 
 # hit up clearbit for the domains we haven't tried to identify already
 clearbit_new <- data_frame()
 for (n in 1:nrow(clearbit_unidentified)) {
   paste(clearbit_unidentified$host[n])
   clearbit_url <- paste0("https://company.clearbit.com/v2/companies/find?domain=", clearbit_unidentified$host[n])
-  clearbit_get <- GET(clearbit_url, add_headers(Authorization = clearbit_auth))
+  paste(clearbit_url)
+  clearbit_get <- GET(clearbit_url, add_headers(Authorization = paste("Bearer", params$clearbit_api_key)))
   if (clearbit_get$status_code == 422) {
     next()
   }
@@ -197,7 +324,9 @@ for (n in 1:nrow(clearbit_unidentified)) {
 }
 
 clearbit <- bind_rows(clearbit_new, clearbit)
-saveRDS(clearbit, "dl-frameworks_domain_info.Rds")
+# Clean up accidental appendage
+# clearbit <- clearbit %>% filter(! host_looked_up %in% clearbit_new$host_looked_up)
+# saveRDS(clearbit, "data/dl-frameworks_domain_info.Rds")
 
 ```
 

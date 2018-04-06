@@ -1,5 +1,3 @@
-#!/usr/bin/env Rscript 
-
 library(stringr)
 
 ## Validation
@@ -56,8 +54,8 @@ get_git_repo_short <- function(repo) {
   return(str_split(repo, "/")[[1]][2])
 }
 
-get_git_clone_path_full <- function(repo, clone_path) {
-  return(paste(clone_path, get_git_repo_short(repo), "repo", sep="/"))
+get_git_clone_path_full <- function(repo, clone_path, repo_type) {
+  return(paste(clone_path, repo, "repo", sep="/"))
 }
 
 get_git_log_filename <- function(repo) {
@@ -65,7 +63,7 @@ get_git_log_filename <- function(repo) {
 }
 
 get_git_log_path <- function(repo, clone_path) {
-  return(paste(clone_path, get_git_repo_short(repo), get_git_log_filename(repo), sep="/"))
+  return(paste(clone_path, repo, get_git_log_filename(repo), sep="/"))
 }
 
 ## Clone
