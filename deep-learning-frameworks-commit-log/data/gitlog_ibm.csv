@@ -1,0 +1,37 @@
+name,email,group,repo
+john emmons,emmo@us.ibm.com,4240,paddlepaddle/notebook
+peter parente,parente@cs.unc.edu,4669,paddlepaddle/notebook
+peter parente,pparent@us.ibm.com,4669,paddlepaddle/notebook
+justin tyberg,jtyberg@us.ibm.com,5e3,paddlepaddle/notebook
+nitin dahyabhai,nitind@us.ibm.com,5728,paddlepaddle/notebook
+wangmiao1981,wangmiao@us.ibm.com,4633,paddlepaddle/paddle
+avmgithub,root@mnode10-11.pub.pic2.ibm.com,918,pytorch/builder
+frreiss,frreiss@us.ibm.com,852,tensorflow/models
+ted chang,htchang@us.ibm.com,735,tensorflow/tensorflow
+paul van eck,pvaneck@us.ibm.com,746,tensorflow/tensorflow
+deron eriksson,deron@us.ibm.com,964,tensorflow/tensorflow
+tian jin,tian.jin1@ibm.com,1183,tensorflow/tensorflow
+sandip giri,sgiri@us.ibm.com,1527,tensorflow/tensorflow
+vaibhav sood,vaibhavs@us.ibm.com,2559,tensorflow/tensorflow
+nishidha panpaliya,nishidha@us.ibm.com,3400,tensorflow/tensorflow
+negiyas,negishi@jp.ibm.com,4862,deeplearning4j/libnd4j
+brendan dwyer,brendan.dwyer@ibm.com,1610,keras-team/keras
+guy hadash,guyh@il.ibm.com,4214,keras-team/keras
+avmgithub,mendoza1@us.ibm.com,918,pytorch/builder
+simeon monov,sdmonov@us.ibm.com,170,pytorch/pytorch
+avmgithub,root@mnode10-11.pub.pic2.ibm.com,918,pytorch/pytorch
+avmgithub,mendoza1@us.ibm.com,918,pytorch/pytorch
+simeon monov,sdmonov@us.ibm.com,170,pytorch/tutorials
+fred reiss,frreiss@us.ibm.com,852,tensorflow/models
+frreiss,frreiss@us.ibm.com,852,tensorflow/serving
+fred reiss,frreiss@us.ibm.com,852,tensorflow/serving
+frreiss,frreiss@us.ibm.com,852,tensorflow/tensorflow
+fred reiss,frreiss@us.ibm.com,852,tensorflow/tensorflow
+glenn weidner,gweidner@us.ibm.com,1076,tensorflow/tensorflow
+tian jin,tjingrant@gmail.com,1183,tensorflow/tensorflow
+sam matzek,smatzek@us.ibm.com,1244,tensorflow/tensorflow
+sandipmgiri,sgiri@us.ibm.com,1527,tensorflow/tensorflow
+shahid,shahid@us.ibm.com,1528,tensorflow/tensorflow
+winnie tsang,wtsang@us.ibm.com,1828,tensorflow/tensorflow
+nishidha,nishidha@us.ibm.com,3400,tensorflow/tensorflow
+hartb,hartb@us.ibm.com,3964,tensorflow/tensorflow

@@ -90,7 +90,7 @@ get_git_log_cmd <- function(repo, clone_path) {
   paste0('cd ', get_git_clone_path_full(repo, clone_path),
          '; git log ',
          ' --no-merges ',
-         ' --date=short --pretty=tformat:"%ad|%an|%ae|%cd|%cn|%ce|%h" > ',
+         ' --date=short --pretty=tformat:"%ad|%an|%ae|%cd|%cn|%ce|%H" > ',
          "../", get_git_log_filename(repo))
 }
 
