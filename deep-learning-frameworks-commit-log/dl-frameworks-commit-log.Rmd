@@ -902,7 +902,7 @@ author_affiliate_summary <- gitlog_past %>%
 
 ```
 
-```{r fig-historical-affiliation-type, fig.height=12, fig.width=12}
+```{r fig-historical-affiliation-type, fig.height=10, fig.width=12}
 ggplot(author_affiliate_summary,
        aes(x=commit_month, y=has_commit)) +
   geom_bar(aes(fill=author_company_type), stat="identity") +
@@ -913,7 +913,7 @@ ggplot(author_affiliate_summary,
   facet_wrap(~ org, scales="free", ncol=3)
 ```
 
-```{r fig-historical-affiliation-public, fig.height=12, fig.width=12}
+```{r fig-historical-affiliation-public, fig.height=10, fig.width=20}
 ggplot(author_affiliate_summary %>% filter(author_company_type=="public"),
        aes(x=commit_month, y=has_commit)) +
   geom_bar(aes(fill=author_company_name), stat="identity") +
@@ -921,7 +921,10 @@ ggplot(author_affiliate_summary %>% filter(author_company_type=="public"),
   theme_few() +
   labs(x="Month", y=element_blank(), title="Affiliated Commits for Public Companies") +
   theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
-  facet_wrap(~ org, scales="free", ncol=3)
+  facet_wrap(~ org, scales="free", nrow=2)
+
+ggsave("public-comapnies-lifetime.png")
+
 ```
 ```{r fig-historical-affiliation-public-tf, fig.height=12, fig.width=12}
 ggplot(author_affiliate_summary %>% filter(author_company_type=="public" & org=="tensorflow"),

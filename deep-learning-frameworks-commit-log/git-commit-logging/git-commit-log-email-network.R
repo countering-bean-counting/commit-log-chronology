@@ -1,3 +1,11 @@
+#' Title
+#'
+#' @param gitlog_commits 
+#'
+#' @return gitlog_commits
+#' @export TRUE?
+#'
+#' @examples get
 get_gh_committers_by_email <- function(gitlog_commits) {
   gitlog_commits %>%
     rename(name=committer_name, email=committer_email) %>%
