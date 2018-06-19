@@ -181,7 +181,6 @@ gh_emails_graph <- visNetwork(gh_emails_nodes_google, gh_emails_edges_google) %>
 
 gh_emails_graph
 ```
-
 ```{r export_graph}
 
 # Export for embedding into the blog entry
